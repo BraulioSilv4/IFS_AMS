@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "system.h": "c",
+        "sys_selftest.h": "c",
+        "sys_common.h": "c"
+    }
+}

@@ -1,20 +1,79 @@
+/** @file sys_main.c 
+*   @brief Application main file
+*   @date July 2020
+*   @version 2.0
+*
+*   This file contains an empty main function,
+*   which can be used for the application.
+*/
+
+/* 
+* Copyright (C) 2009-2016 Texas Instruments Incorporated - www.ti.com 
+* 
+* 
+*  Redistribution and use in source and binary forms, with or without 
+*  modification, are permitted provided that the following conditions 
+*  are met:
+*
+*    Redistributions of source code must retain the above copyright 
+*    notice, this list of conditions and the following disclaimer.
+*
+*    Redistributions in binary form must reproduce the above copyright
+*    notice, this list of conditions and the following disclaimer in the 
+*    documentation and/or other materials provided with the   
+*    distribution.
+*
+*    Neither the name of Texas Instruments Incorporated nor the names of
+*    its contributors may be used to endorse or promote products derived
+*    from this software without specific prior written permission.
+*
+*  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 
+*  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT 
+*  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+*  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT 
+*  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
+*  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT 
+*  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+*  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+*  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
+*  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
+*  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*
+*/
+
+
+/* USER CODE BEGIN (0) */
+
+
+/*
+ * CONNECTIONS BETWEEN BQ79600EVM-030 AND LAUNCHXL2-TMS57012 (TMS570LS1224):
+ * See BQ79600EVM-030 User's Guide, section 4.3 "Connecting the BQ79600EVM to TMS570 LaunchPad" for instructions on how to directly plug-in the BQ79600EVM to the MCU LaunchPad
+ * **********NOTE: Make sure R8 and R10 are populated, and R7 and R9 are removed from the BQ79600EVM***********
+ *
+ * RELEVANT MODIFIED FILES:
+ * bq79616.h        must change TOTALBOARDS in this file (based on setup) for code to function
+ * bq79616.c        contains all relevant functions used in the sample code
+ * notification.c   sets UART_RX_RDY and RTI_TIMEOUT when their respective interrupts happen
+ * .dil/.hcg        used for generating the basic TMS570LS1224 code files, can be used to make changes to the microcontroller
+ */
+
+/* USER CODE END */
+
 /* Include Files */
 
-#include "include/sys_common.h"
-#include "include/bq79616.h"
-#include "include/bq79600.h"
-#include "include/system.h"
-#include "include/gio.h"
-#include "include/sci.h"
-#include "include/spi.h"
-#include "include/rti.h"
-#include "include/sys_vim.h"
+#include "sys_common.h"
 
+/* USER CODE BEGIN (1) */
+#include "bq79616.h"
+#include "bq79600.h"
+#include "system.h"
+#include "gio.h"
+#include "sci.h"
+#include "spi.h"
+#include "rti.h"
 #include "sys_vim.h"
 #include <math.h>
 #include <stdio.h>
-#include <string.h>
-#include <string.h>
 /* USER CODE END */
 
 /** @fn void main(void)
@@ -42,7 +101,7 @@ int main(void)
     rtiInit();
     sciSetBaudrate(sciREG, 1000000);
     vimInit();
-    //_enable_IRQ();
+    _enable_IRQ();
 
     //write 0xFF during read commands, initialize this 0xFF buffer
     memset(FFBuffer, 0xFF, sizeof(FFBuffer));
@@ -90,6 +149,15 @@ int main(void)
         delayus(192+5*TOTALBOARDS);
         SpiReadReg(0, VCELL16_HI+(16-ACTIVECHANNELS)*2, response_frame, ACTIVECHANNELS*2, 0, FRMWRT_STK_R);
 
+        /*
+         * ***********************************************
+         * NOTE: SOME COMPUTERS HAVE ISSUES RECEIVING
+         * A LARGE AMOUNT OF DATA VIA printf STATEMENTS.
+         * THE FOLLOWING PRINTOUT OF THE RESPONSE DATA
+         * IS NOT GUARANTEED TO WORK ON ALL SYSTEMS.
+         * ***********************************************
+        */
+
         printf("\n"); //start with a newline to add some extra spacing between each loop
         //only read/print the base device's data if there is no bridge device
         for(currentBoard=0; currentBoard<( BRIDGEDEVICE==1 ? TOTALBOARDS-1 : TOTALBOARDS); currentBoard++)
@@ -105,7 +173,13 @@ int main(void)
             }
             printf("\n"); //newline per board
         }
-    } while(1);
+    }while(1);
+
+/* USER CODE END */
 
     return 0;
 }
+
+
+/* USER CODE BEGIN (4) */
+/* USER CODE END */
