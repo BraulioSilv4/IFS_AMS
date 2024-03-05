@@ -1,17 +1,63 @@
+//
+// !!! WARNING !!! AUTO-GENERATED FILE!
+// PLEASE DO NOT MODIFY IT AND USE "platformio.ini":
+// https://docs.platformio.org/page/projectconf/section_env_build.html#build-flags
+//
 {
     "configurations": [
         {
-            "name": "Linux",
+            "name": "PlatformIO",
             "includePath": [
-                "${workspaceFolder}/**",
-                "${workspaceFolder}/include",
-                "${workspaceFolder}/include"
+                "C:/Users/guilh/OneDrive/Ambiente de Trabalho/IFS_AMS/IFS_AMS/include",
+                "C:/Users/guilh/OneDrive/Ambiente de Trabalho/IFS_AMS/IFS_AMS/src",
+                "C:/Users/guilh/.platformio/packages/framework-arduino-sam/cores/arduino",
+                "C:/Users/guilh/.platformio/packages/framework-arduino-sam/system/libsam",
+                "C:/Users/guilh/.platformio/packages/framework-arduino-sam/system/CMSIS/CMSIS/Include",
+                "C:/Users/guilh/.platformio/packages/framework-arduino-sam/system/CMSIS/Device/ATMEL",
+                "C:/Users/guilh/.platformio/packages/framework-arduino-sam/variants/arduino_due_x",
+                "C:/Users/guilh/.platformio/packages/framework-arduino-sam/libraries/HID/src",
+                "C:/Users/guilh/.platformio/packages/framework-arduino-sam/libraries/SPI/src",
+                "C:/Users/guilh/.platformio/packages/framework-arduino-sam/libraries/Wire/src",
+                ""
             ],
-            "defines": [],
-            "compilerPath": "/usr/bin/gcc",
-            "cStandard": "c17",
-            "cppStandard": "gnu++17",
-            "intelliSenseMode": "linux-gcc-x64"
+            "browse": {
+                "limitSymbolsToIncludedHeaders": true,
+                "path": [
+                    "C:/Users/guilh/OneDrive/Ambiente de Trabalho/IFS_AMS/IFS_AMS/include",
+                    "C:/Users/guilh/OneDrive/Ambiente de Trabalho/IFS_AMS/IFS_AMS/src",
+                    "C:/Users/guilh/.platformio/packages/framework-arduino-sam/cores/arduino",
+                    "C:/Users/guilh/.platformio/packages/framework-arduino-sam/system/libsam",
+                    "C:/Users/guilh/.platformio/packages/framework-arduino-sam/system/CMSIS/CMSIS/Include",
+                    "C:/Users/guilh/.platformio/packages/framework-arduino-sam/system/CMSIS/Device/ATMEL",
+                    "C:/Users/guilh/.platformio/packages/framework-arduino-sam/variants/arduino_due_x",
+                    "C:/Users/guilh/.platformio/packages/framework-arduino-sam/libraries/HID/src",
+                    "C:/Users/guilh/.platformio/packages/framework-arduino-sam/libraries/SPI/src",
+                    "C:/Users/guilh/.platformio/packages/framework-arduino-sam/libraries/Wire/src",
+                    ""
+                ]
+            },
+            "defines": [
+                "PLATFORMIO=60113",
+                "__SAM3X8E__",
+                "ARDUINO_SAM_DUE",
+                "ARDUINO=10805",
+                "F_CPU=84000000L",
+                "USBCON",
+                "USB_VID=0x2341",
+                "USB_PID=0x003E",
+                "USB_PRODUCT=\"Arduino Due\"",
+                "USB_MANUFACTURER=\"Arduino\"",
+                "ARDUINO_ARCH_SAM",
+                ""
+            ],
+            "cStandard": "gnu11",
+            "cppStandard": "gnu++11",
+            "compilerPath": "C:/Users/guilh/.platformio/packages/toolchain-gccarmnoneeabi/bin/arm-none-eabi-gcc.exe",
+            "compilerArgs": [
+                "-mcpu=cortex-m3",
+                "-mthumb",
+                ""
+            ]
         }
     ],
     "version": 4
