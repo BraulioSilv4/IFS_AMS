@@ -10,5 +10,7 @@
 
 void ADCSetup();
 
+float complement(uint16_t raw_data);
+
 #endif // AMSMASTER_UTILS_HPP_
 //EOF
