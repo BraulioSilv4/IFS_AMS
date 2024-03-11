@@ -2,15 +2,15 @@
  *  @file bq79616.h
  *
  *  @author Vince Toledo - Texas Instruments Inc.
- *  @date 20-April-2020
- *  @version 1.0 beta version
+ *  @date February 2020
+ *  @version 1.2
  *  @note Built with CCS for Hercules Version: 8.1.0.00011
  *  @note Built for TMS570LS1224 (LAUNCH XL2)
  */
 
 /*****************************************************************************
 **
-**  Copyright (c) 2011-2017 Texas Instruments
+**  Copyright (c) 2011-2019 Texas Instruments
 **
 ******************************************************************************/
 
@@ -20,7 +20,6 @@
 
 #include "datatypes.h"
 #include "hal_stdtypes.h"
-#include "spi.h"
 
 //****************************************************
 // ***Register defines, choose one of the following***
@@ -29,10 +28,8 @@
 //#include "A0_reg.h"
 #include "B0_reg.h"
 
-//USER DEFINES
-#define TOTALBOARDS 2       //boards in stack, including base device
-#define ACTIVECHANNELS 16   //channels to activate
-#define BRIDGEDEVICE 1      //
+// User defines
+#define TOTALBOARDS 1       //boards in stack
 #define MAXBYTES (16*2)     //maximum number of bytes to be read from the devices (for array creation)
 #define BAUDRATE 1000000    //device + uC baudrate
 
@@ -44,29 +41,28 @@
 #define FRMWRT_ALL_W	0x50    //broadcast WRITE
 #define FRMWRT_REV_ALL_W 0x60   //broadcast WRITE reverse direction
                   
-//FUNCTION PROTOTYPES
-void SpiAutoAddress();
-
-int SpiWriteReg(BYTE bID, uint16 wAddr, uint64 dwData, BYTE bLen, BYTE bWriteType);
-int SpiWriteFrame(uint16 bID, uint16 wAddr, uint16 * pData, uint16 bLen, uint8 bWriteType);
-int SpiReadReg(BYTE bID, uint16 wAddr, uint16 * pData, BYTE bLen, uint32 dwTimeOut,BYTE bWriteType);
-
-uint32 SpiCRC16(uint16 *pBuf, int nLen);
-
-void delayus(uint16 us);
-void delayms(uint16 ms);
-
-void SpiDisableTimeout_600_616(void);
-
-float Complement(uint16 rawData, float multiplier);
+// Function Prototypes
+void Wake79616();
+void AutoAddress();
 BOOL GetFaultStat();
-uint16_t volt2Byte(float volt);
 
-unsigned printConsole(const char *_format, ...);
+uint16 CRC16(BYTE *pBuf, int nLen);
 
-//SPI variables
-spiDAT1_t dataconfig1_t;
-uint16 FFBuffer[128];
+int  WriteReg(BYTE bID, uint16 wAddr, uint64 dwData, BYTE bLen, BYTE bWriteType);
+int  ReadReg(BYTE bID, uint16 wAddr, BYTE * pData, BYTE bLen, uint32 dwTimeOut, BYTE bWriteType);
+
+int  WriteFrame(BYTE bID, uint16 wAddr, BYTE * pData, BYTE bLen, BYTE bWriteType);
+int  ReadFrameReq(BYTE bID, uint16 wAddr, BYTE bByteToReturn,BYTE bWriteType);
+int  WaitRespFrame(BYTE *pFrame, uint32 bLen, uint32 dwTimeOut);
+
+void delayms(uint16 ms);
+void delayus(uint16 us);
+
+void ResetAllFaults(BYTE bID, BYTE bWriteType);
+void MaskAllFaults(BYTE bID, BYTE bWriteType);
+
+void RunCB();
+void ReverseAddressing();
 
 #endif /* BQ79606_H_ */
 //EOF

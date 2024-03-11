@@ -8,8 +8,8 @@
         {
             "name": "PlatformIO",
             "includePath": [
-                "C:/Users/guilh/OneDrive/Ambiente de Trabalho/IFS_AMS/IFS_AMS/include",
-                "C:/Users/guilh/OneDrive/Ambiente de Trabalho/IFS_AMS/IFS_AMS/src",
+                "C:/Users/guilh/OneDrive/Ambiente de Trabalho/ams/IFS_AMS/include",
+                "C:/Users/guilh/OneDrive/Ambiente de Trabalho/ams/IFS_AMS/src",
                 "C:/Users/guilh/.platformio/packages/framework-arduino-sam/cores/arduino",
                 "C:/Users/guilh/.platformio/packages/framework-arduino-sam/system/libsam",
                 "C:/Users/guilh/.platformio/packages/framework-arduino-sam/system/CMSIS/CMSIS/Include",
@@ -23,8 +23,8 @@
             "browse": {
                 "limitSymbolsToIncludedHeaders": true,
                 "path": [
-                    "C:/Users/guilh/OneDrive/Ambiente de Trabalho/IFS_AMS/IFS_AMS/include",
-                    "C:/Users/guilh/OneDrive/Ambiente de Trabalho/IFS_AMS/IFS_AMS/src",
+                    "C:/Users/guilh/OneDrive/Ambiente de Trabalho/ams/IFS_AMS/include",
+                    "C:/Users/guilh/OneDrive/Ambiente de Trabalho/ams/IFS_AMS/src",
                     "C:/Users/guilh/.platformio/packages/framework-arduino-sam/cores/arduino",
                     "C:/Users/guilh/.platformio/packages/framework-arduino-sam/system/libsam",
                     "C:/Users/guilh/.platformio/packages/framework-arduino-sam/system/CMSIS/CMSIS/Include",

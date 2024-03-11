@@ -2,31 +2,30 @@
  *  @file bq79616.c
  *
  *  @author Vince Toledo - Texas Instruments Inc.
- *  @date 20-April-2020
- *  @version 1.0
+ *  @date February 2020
+ *  @version 1.2
  *  @note Built with CCS for Hercules Version: 8.1.0.00011
+ *  @note Built for TMS570LS1224 (LAUNCH XL2)
  */
 
 /*****************************************************************************
  **
- **  Copyright (c) 2011-2017 Texas Instruments
+ **  Copyright (c) 2011-2019 Texas Instruments
  **
  ******************************************************************************/
 
 #include <bq79616.h>
-#include <bq79600.h>
 #include "string.h"
 #include "sci.h"
-#include "spi.h"
 #include "rti.h"
 #include "gio.h"
 #include "datatypes.h"
-#include "stdarg.h"
+
 
 //GLOBAL VARIABLES (use these to avoid stack overflows by creating too many function variables)
 //avoid creating variables/arrays in functions, or you will run out of stack space quickly
-uint16 response_frame2[(MAXBYTES+6)*TOTALBOARDS]; //response frame to be used by every read
-uint16 fault_frame[39*TOTALBOARDS]; //hold fault frame if faults are printed
+BYTE response_frame2[(MAXBYTES+6)*TOTALBOARDS]; //response frame to be used by every read
+BYTE fault_frame[39*TOTALBOARDS]; //hold fault frame if faults are printed
 int currentBoard = 0;
 int currentCell = 0;
 BYTE bReturn = 0;
@@ -34,73 +33,55 @@ int bRes = 0;
 int count = 10000;
 BYTE bBuf[8];
 uint8 pFrame[64];
+uint16 wCRC = 0;
+uint16 wCRC16 = 0;
+int crc_i = 0;
 static volatile unsigned int delayval = 0; //for delayms and delayus functions
+
 extern int UART_RX_RDY;
 extern int RTI_TIMEOUT;
-int topFoundBoard = 0;
-int baseCommunicating = 0;
-int otpPass = 0;
-BYTE* currCRC;
-int crc_i = 0;
-uint16 wCRC2 = 0xFFFF;
-int crc16_i = 0;
-
-uint16 autoaddr_response_frame[(1+6)*TOTALBOARDS]; //response frame for auto-addressing sequence
-int numReads = 0;
-int channel = 0;
-
-//SpiWriteFrame
-uint16 spiBuf[8];
-uint16 spiFrame[64];
-int spiPktLen = 0;
-uint16 * spiPBuf = spiFrame;
-uint16 spiWCRC;
-
-//SpiReadReg
-uint16 spiReturn = 0;
-int M = 0; //expected total response bytes
-int i = 0; //number of groups of 128 bytes
-int K = 0; //number of bytes remaining in the last group of 128
 
 //******
 //PINGS
 //******
-void SpiWake79600(void) {
-    spiREG3->PC0 &= ~(uint32)((uint32)(1U << 10U | 1U << 1U)); // disable MOSI and nCS - now GPIO
-    gioToggleBit(spiPORT3,1U);
-    delayus(0.5);
-    gioSetBit(spiPORT3,10U,0);
-    delayus(2750); // WAKE ping = 2.5ms to 3ms
-    gioSetBit(spiPORT3,10U,1);
-    delayus(0.5);
-    gioToggleBit(spiPORT3,1U);
-    spiREG3->PC0 |= (uint32)((uint32)(1U << 10U | 1U << 1U)); // re-enable MOSI and nCS - now SPI
-}
-void SpiSD79600(void) {
-    spiREG3->PC0 &= ~(uint32)((uint32)(1U << 10U | 1U << 1U)); // disable MOSI and nCS - now GPIO
-    gioToggleBit(spiPORT3,1U);
-    delayus(0.5);
-    gioSetBit(spiPORT3,10U,0);
-    delayms(13); // Shutdown ping = >12.5ms
-    gioSetBit(spiPORT3,10U,1);
-    delayus(0.5);
-    gioToggleBit(spiPORT3,1U);
-    spiREG3->PC0 |= (uint32)((uint32)(1U << 10U | 1U << 1U)); // re-enable MOSI and nCS - now SPI
-}
-void SpiStA79600(void) {
-    spiREG3->PC0 &= ~(uint32)((uint32)(1U << 10U | 1U << 1U)); // disable MOSI and nCS - now GPIO
-    gioToggleBit(spiPORT3,1U);
-    delayus(0.5);
-    gioSetBit(spiPORT3,10U,0);
-    delayus(275); // Sleep to Active ping = 250us to 300us
-    gioSetBit(spiPORT3,10U,1);
-    delayus(0.5);
-    gioToggleBit(spiPORT3,1U);
-    spiREG3->PC0 |= (uint32)((uint32)(1U << 10U | 1U << 1U)); // re-enable MOSI and nCS - now SPI
+void Wake79616(void) {
+    sciREG->GCR1 &= ~(1U << 7U); // put SCI into reset
+    sciREG->PIO0 &= ~(1U << 2U); // disable transmit function - now a GPIO
+    sciREG->PIO3 &= ~(1U << 2U); // set output to low
+
+    delayus(2500); // WAKE ping = 2ms to 2.5ms
+    sciInit();
+    sciSetBaudrate(sciREG, BAUDRATE);
 }
 
-void SpiCommClear79600(void) {
-    spiTransmitData(spiREG3,&dataconfig1_t,1,0x00);
+void SD79616(void) {
+    sciREG->GCR1 &= ~(1U << 7U); // put SCI into reset
+    sciREG->PIO0 &= ~(1U << 2U); // disable transmit function - now a GPIO
+    sciREG->PIO3 &= ~(1U << 2U); // set output to low
+
+    delayus(9000); // SD ping = 7ms to 10ms
+    sciInit();
+    sciSetBaudrate(sciREG, BAUDRATE);
+}
+
+void StA79616(void) {
+    sciREG->GCR1 &= ~(1U << 7U); // put SCI into reset
+    sciREG->PIO0 &= ~(1U << 2U); // disable transmit function - now a GPIO
+    sciREG->PIO3 &= ~(1U << 2U); // set output to low
+
+    delayus(250); // StA ping = 250us to 300us
+    sciInit();
+    sciSetBaudrate(sciREG, BAUDRATE);
+}
+
+void HWRST79616(void) {
+    sciREG->GCR1 &= ~(1U << 7U); // put SCI into reset
+    sciREG->PIO0 &= ~(1U << 2U); // disable transmit function - now a GPIO
+    sciREG->PIO3 &= ~(1U << 2U); // set output to low
+
+    delayus(36000); // StA ping = 36ms
+    sciInit();
+    sciSetBaudrate(sciREG, BAUDRATE);
 }
 //**********
 //END PINGS
@@ -109,55 +90,61 @@ void SpiCommClear79600(void) {
 //**********************
 //AUTO ADDRESS SEQUENCE
 //**********************
-void SpiAutoAddress()
+void AutoAddress()
 {
     //DUMMY WRITE TO SNCHRONIZE ALL DAISY CHAIN DEVICES DLL (IF A DEVICE RESET OCCURED PRIOR TO THIS)
-    SpiWriteReg(0, OTP_ECC_DATAIN1, 0X00, 1, FRMWRT_STK_W);
-    SpiWriteReg(0, OTP_ECC_DATAIN2, 0X00, 1, FRMWRT_STK_W);
-    SpiWriteReg(0, OTP_ECC_DATAIN3, 0X00, 1, FRMWRT_STK_W);
-    SpiWriteReg(0, OTP_ECC_DATAIN4, 0X00, 1, FRMWRT_STK_W);
-    SpiWriteReg(0, OTP_ECC_DATAIN5, 0X00, 1, FRMWRT_STK_W);
-    SpiWriteReg(0, OTP_ECC_DATAIN6, 0X00, 1, FRMWRT_STK_W);
-    SpiWriteReg(0, OTP_ECC_DATAIN7, 0X00, 1, FRMWRT_STK_W);
-    SpiWriteReg(0, OTP_ECC_DATAIN8, 0X00, 1, FRMWRT_STK_W);
+    WriteReg(0, OTP_ECC_DATAIN1, 0X00, 1, FRMWRT_ALL_W);
+    WriteReg(0, OTP_ECC_DATAIN2, 0X00, 1, FRMWRT_ALL_W);
+    WriteReg(0, OTP_ECC_DATAIN3, 0X00, 1, FRMWRT_ALL_W);
+    WriteReg(0, OTP_ECC_DATAIN4, 0X00, 1, FRMWRT_ALL_W);
+    WriteReg(0, OTP_ECC_DATAIN5, 0X00, 1, FRMWRT_ALL_W);
+    WriteReg(0, OTP_ECC_DATAIN6, 0X00, 1, FRMWRT_ALL_W);
+    WriteReg(0, OTP_ECC_DATAIN7, 0X00, 1, FRMWRT_ALL_W);
+    WriteReg(0, OTP_ECC_DATAIN8, 0X00, 1, FRMWRT_ALL_W);
 
     //ENABLE AUTO ADDRESSING MODE
-    SpiWriteReg(0, CONTROL1, 0X01, 1, FRMWRT_ALL_W);
+    WriteReg(0, CONTROL1, 0X01, 1, FRMWRT_ALL_W);
 
     //SET ADDRESSES FOR EVERY BOARD
     for(currentBoard=0; currentBoard<TOTALBOARDS; currentBoard++)
     {
-        SpiWriteReg(0, DIR0_ADDR, currentBoard, 1, FRMWRT_ALL_W);
+        WriteReg(0, DIR0_ADDR, currentBoard, 1, FRMWRT_ALL_W);
     }
 
-    //BROADCAST WRITE TO SET ALL DEVICES AS STACK DEVICE
-    SpiWriteReg(0, COMM_CTRL, 0x02, 1, FRMWRT_ALL_W);
+    WriteReg(0, COMM_CTRL, 0x02, 1, FRMWRT_ALL_W); //set everything as a stack device first
 
-    //SET THE HIGHEST DEVICE IN THE STACK AS BOTH STACK AND TOP OF STACK
-    SpiWriteReg(TOTALBOARDS-1, COMM_CTRL, 0x03, 1, FRMWRT_SGL_W);
+    if(TOTALBOARDS==1) //if there's only 1 board, it's the base AND top of stack, so change it to those
+    {
+        WriteReg(0, COMM_CTRL, 0x01, 1, FRMWRT_SGL_W);
+    }
+    else //otherwise set the base and top of stack individually
+    {
+        WriteReg(0, COMM_CTRL, 0x00, 1, FRMWRT_SGL_W);
+        WriteReg(TOTALBOARDS-1, COMM_CTRL, 0x03, 1, FRMWRT_SGL_W);
+    }
 
     //SYNCRHONIZE THE DLL WITH A THROW-AWAY READ
-    SpiReadReg(0, OTP_ECC_DATAIN1, autoaddr_response_frame, 1, 0, FRMWRT_STK_R);
-    SpiReadReg(0, OTP_ECC_DATAIN2, autoaddr_response_frame, 1, 0, FRMWRT_STK_R);
-    SpiReadReg(0, OTP_ECC_DATAIN3, autoaddr_response_frame, 1, 0, FRMWRT_STK_R);
-    SpiReadReg(0, OTP_ECC_DATAIN4, autoaddr_response_frame, 1, 0, FRMWRT_STK_R);
-    SpiReadReg(0, OTP_ECC_DATAIN5, autoaddr_response_frame, 1, 0, FRMWRT_STK_R);
-    SpiReadReg(0, OTP_ECC_DATAIN6, autoaddr_response_frame, 1, 0, FRMWRT_STK_R);
-    SpiReadReg(0, OTP_ECC_DATAIN7, autoaddr_response_frame, 1, 0, FRMWRT_STK_R);
-    SpiReadReg(0, OTP_ECC_DATAIN8, autoaddr_response_frame, 1, 0, FRMWRT_STK_R);
+    ReadReg(0, OTP_ECC_DATAIN1, response_frame2, 1, 0, FRMWRT_ALL_R);
+    ReadReg(0, OTP_ECC_DATAIN2, response_frame2, 1, 0, FRMWRT_ALL_R);
+    ReadReg(0, OTP_ECC_DATAIN3, response_frame2, 1, 0, FRMWRT_ALL_R);
+    ReadReg(0, OTP_ECC_DATAIN4, response_frame2, 1, 0, FRMWRT_ALL_R);
+    ReadReg(0, OTP_ECC_DATAIN5, response_frame2, 1, 0, FRMWRT_ALL_R);
+    ReadReg(0, OTP_ECC_DATAIN6, response_frame2, 1, 0, FRMWRT_ALL_R);
+    ReadReg(0, OTP_ECC_DATAIN7, response_frame2, 1, 0, FRMWRT_ALL_R);
+    ReadReg(0, OTP_ECC_DATAIN8, response_frame2, 1, 0, FRMWRT_ALL_R);
 
-    //OPTIONAL: read back all device addresses
+    /*//OPTIONAL: read back all device addresses
     for(currentBoard=0; currentBoard<TOTALBOARDS; currentBoard++)
     {
-        SpiReadReg(currentBoard, DIR0_ADDR, autoaddr_response_frame, 1, 0, FRMWRT_SGL_R);
-    }
+        ReadReg(currentBoard, DIR0_ADDR, response_frame2, 1, 0, FRMWRT_SGL_R);
+        printf("board %d\n",response_frame2[4]);
+    }*/
 
-    //OPTIONAL: read register address 0x2001 and verify that the value is 0x14
-    SpiReadReg(0, 0x2001, autoaddr_response_frame, 1, 0, FRMWRT_SGL_R);
+    //RESET ANY COMM FAULT CONDITIONS FROM STARTUP
+    WriteReg(0, FAULT_RST2, 0x03, 1, FRMWRT_ALL_W);
 
-   return;
+    return;
 }
-
 //**************************
 //END AUTO ADDRESS SEQUENCE
 //**************************
@@ -166,191 +153,162 @@ void SpiAutoAddress()
 //************************
 //WRITE AND READ FUNCTIONS
 //************************
-int SpiWriteReg(BYTE bID, uint16 wAddr, uint64 dwData, BYTE bLen, BYTE bWriteType) {
-    // device address, register start address, data bytes, data length, write type (single, broadcast, stack)
-    bRes = 0;
-    memset(spiBuf,0,sizeof(spiBuf));
-    while(gioGetBit(gioPORTA, 1) == 0) delayus(5); //wait until SPI_RDY is ready
-    switch (bLen) {
-    case 1:
-        spiBuf[0] = dwData & 0x00000000000000FF;
-        bRes = SpiWriteFrame(bID, wAddr, spiBuf, 1, bWriteType);
-        break;
-    case 2:
-        spiBuf[0] = (dwData & 0x000000000000FF00) >> 8;
-        spiBuf[1] = dwData & 0x00000000000000FF;
-        bRes = SpiWriteFrame(bID, wAddr, spiBuf, 2, bWriteType);
-        break;
-    case 3:
-        spiBuf[0] = (dwData & 0x0000000000FF0000) >> 16;
-        spiBuf[1] = (dwData & 0x000000000000FF00) >> 8;
-        spiBuf[2] = dwData & 0x00000000000000FF;
-        bRes = SpiWriteFrame(bID, wAddr, spiBuf, 3, bWriteType);
-        break;
-    case 4:
-        spiBuf[0] = (dwData & 0x00000000FF000000) >> 24;
-        spiBuf[1] = (dwData & 0x0000000000FF0000) >> 16;
-        spiBuf[2] = (dwData & 0x000000000000FF00) >> 8;
-        spiBuf[3] = dwData & 0x00000000000000FF;
-        bRes = SpiWriteFrame(bID, wAddr, spiBuf, 4, bWriteType);
-        break;
-    case 5:
-        spiBuf[0] = (dwData & 0x000000FF00000000) >> 32;
-        spiBuf[1] = (dwData & 0x00000000FF000000) >> 24;
-        spiBuf[2] = (dwData & 0x0000000000FF0000) >> 16;
-        spiBuf[3] = (dwData & 0x000000000000FF00) >> 8;
-        spiBuf[4] = dwData & 0x00000000000000FF;
-        bRes = SpiWriteFrame(bID, wAddr, spiBuf, 5, bWriteType);
-        break;
-    case 6:
-        spiBuf[0] = (dwData & 0x0000FF0000000000) >> 40;
-        spiBuf[1] = (dwData & 0x000000FF00000000) >> 32;
-        spiBuf[2] = (dwData & 0x00000000FF000000) >> 24;
-        spiBuf[3] = (dwData & 0x0000000000FF0000) >> 16;
-        spiBuf[4] = (dwData & 0x000000000000FF00) >> 8;
-        spiBuf[5] = dwData & 0x00000000000000FF;
-        bRes = SpiWriteFrame(bID, wAddr, spiBuf, 6, bWriteType);
-        break;
-    case 7:
-        spiBuf[0] = (dwData & 0x00FF000000000000) >> 48;
-        spiBuf[1] = (dwData & 0x0000FF0000000000) >> 40;
-        spiBuf[2] = (dwData & 0x000000FF00000000) >> 32;
-        spiBuf[3] = (dwData & 0x00000000FF000000) >> 24;
-        spiBuf[4] = (dwData & 0x0000000000FF0000) >> 16;
-        spiBuf[5] = (dwData & 0x000000000000FF00) >> 8;
-        spiBuf[6] = dwData & 0x00000000000000FF;
-        bRes = SpiWriteFrame(bID, wAddr, spiBuf, 7, bWriteType);
-        break;
-    case 8:
-        spiBuf[0] = (dwData & 0xFF00000000000000) >> 56;
-        spiBuf[1] = (dwData & 0x00FF000000000000) >> 48;
-        spiBuf[2] = (dwData & 0x0000FF0000000000) >> 40;
-        spiBuf[3] = (dwData & 0x000000FF00000000) >> 32;
-        spiBuf[4] = (dwData & 0x00000000FF000000) >> 24;
-        spiBuf[5] = (dwData & 0x0000000000FF0000) >> 16;
-        spiBuf[6] = (dwData & 0x000000000000FF00) >> 8;
-        spiBuf[7] = dwData & 0x00000000000000FF;
-        bRes = SpiWriteFrame(bID, wAddr, spiBuf, 8, bWriteType);
-        break;
-    default:
-        break;
-    }
-    return bRes;
+
+//FORMAT WRITE DATA, SEND TO
+//BE COMBINED WITH REST OF FRAME
+int WriteReg(BYTE bID, uint16 wAddr, uint64 dwData, BYTE bLen, BYTE bWriteType) {
+	// device address, register start address, data bytes, data length, write type (single, broadcast, stack)
+	bRes = 0;
+	memset(bBuf,0,sizeof(bBuf));
+	switch (bLen) {
+	case 1:
+		bBuf[0] = dwData & 0x00000000000000FF;
+		bRes = WriteFrame(bID, wAddr, bBuf, 1, bWriteType);
+		break;
+	case 2:
+		bBuf[0] = (dwData & 0x000000000000FF00) >> 8;
+		bBuf[1] = dwData & 0x00000000000000FF;
+		bRes = WriteFrame(bID, wAddr, bBuf, 2, bWriteType);
+		break;
+	case 3:
+		bBuf[0] = (dwData & 0x0000000000FF0000) >> 16;
+		bBuf[1] = (dwData & 0x000000000000FF00) >> 8;
+		bBuf[2] = dwData & 0x00000000000000FF;
+		bRes = WriteFrame(bID, wAddr, bBuf, 3, bWriteType);
+		break;
+	case 4:
+		bBuf[0] = (dwData & 0x00000000FF000000) >> 24;
+		bBuf[1] = (dwData & 0x0000000000FF0000) >> 16;
+		bBuf[2] = (dwData & 0x000000000000FF00) >> 8;
+		bBuf[3] = dwData & 0x00000000000000FF;
+		bRes = WriteFrame(bID, wAddr, bBuf, 4, bWriteType);
+		break;
+	case 5:
+		bBuf[0] = (dwData & 0x000000FF00000000) >> 32;
+		bBuf[1] = (dwData & 0x00000000FF000000) >> 24;
+		bBuf[2] = (dwData & 0x0000000000FF0000) >> 16;
+		bBuf[3] = (dwData & 0x000000000000FF00) >> 8;
+		bBuf[4] = dwData & 0x00000000000000FF;
+		bRes = WriteFrame(bID, wAddr, bBuf, 5, bWriteType);
+		break;
+	case 6:
+		bBuf[0] = (dwData & 0x0000FF0000000000) >> 40;
+		bBuf[1] = (dwData & 0x000000FF00000000) >> 32;
+		bBuf[2] = (dwData & 0x00000000FF000000) >> 24;
+		bBuf[3] = (dwData & 0x0000000000FF0000) >> 16;
+		bBuf[4] = (dwData & 0x000000000000FF00) >> 8;
+		bBuf[5] = dwData & 0x00000000000000FF;
+		bRes = WriteFrame(bID, wAddr, bBuf, 6, bWriteType);
+		break;
+	case 7:
+		bBuf[0] = (dwData & 0x00FF000000000000) >> 48;
+		bBuf[1] = (dwData & 0x0000FF0000000000) >> 40;
+		bBuf[2] = (dwData & 0x000000FF00000000) >> 32;
+		bBuf[3] = (dwData & 0x00000000FF000000) >> 24;
+		bBuf[4] = (dwData & 0x0000000000FF0000) >> 16;
+		bBuf[5] = (dwData & 0x000000000000FF00) >> 8;
+		bBuf[6] = dwData & 0x00000000000000FF;
+		bRes = WriteFrame(bID, wAddr, bBuf, 7, bWriteType);
+		break;
+	case 8:
+		bBuf[0] = (dwData & 0xFF00000000000000) >> 56;
+		bBuf[1] = (dwData & 0x00FF000000000000) >> 48;
+		bBuf[2] = (dwData & 0x0000FF0000000000) >> 40;
+		bBuf[3] = (dwData & 0x000000FF00000000) >> 32;
+		bBuf[4] = (dwData & 0x00000000FF000000) >> 24;
+		bBuf[5] = (dwData & 0x0000000000FF0000) >> 16;
+		bBuf[6] = (dwData & 0x000000000000FF00) >> 8;
+		bBuf[7] = dwData & 0x00000000000000FF;
+		bRes = WriteFrame(bID, wAddr, bBuf, 8, bWriteType);
+		break;
+	default:
+		break;
+	}
+	return bRes;
 }
 
+//GENERATE COMMAND FRAME
+int WriteFrame(BYTE bID, uint16 wAddr, BYTE * pData, BYTE bLen, BYTE bWriteType) {
+	int bPktLen = 0;
+	uint8 * pBuf = pFrame;
+	memset(pFrame, 0x7F, sizeof(pFrame));
+	*pBuf++ = 0x80 | (bWriteType) | ((bWriteType & 0x10) ? bLen - 0x01 : 0x00); //Only include blen if it is a write; Writes are 0x90, 0xB0, 0xD0
+	if (bWriteType == FRMWRT_SGL_R || bWriteType == FRMWRT_SGL_W)
+	{
+		*pBuf++ = (bID & 0x00FF);
+	}
+	*pBuf++ = (wAddr & 0xFF00) >> 8;
+	*pBuf++ = wAddr & 0x00FF;
 
-int SpiWriteFrame(uint16 bID, uint16 wAddr, uint16 * pData, uint16 bLen, uint8 bWriteType) {
-    spiPktLen = 0;
-    spiPBuf = spiFrame;
-    memset(spiFrame, 0x7F, sizeof(spiFrame));
-    *spiPBuf++ = 0x80 | (bWriteType) | ((bWriteType & 0x10) ? bLen - 0x01 : 0x00); //Only include blen if it is a write; Writes are 0x90, 0xB0, 0xD0
-    if (bWriteType == FRMWRT_SGL_R || bWriteType == FRMWRT_SGL_W)
-    {
-        *spiPBuf++ = (bID & 0x00FF);
-    }
-    *spiPBuf++ = (wAddr & 0xFF00) >> 8;
-    *spiPBuf++ = wAddr & 0x00FF;
+	while (bLen--)
+		*pBuf++ = *pData++;
 
-    while (bLen--)
-        *spiPBuf++ = *pData++;
+	bPktLen = pBuf - pFrame;
 
-    spiPktLen = spiPBuf - spiFrame;
+	wCRC = CRC16(pFrame, bPktLen);
+	*pBuf++ = wCRC & 0x00FF;
+	*pBuf++ = (wCRC & 0xFF00) >> 8;
+	bPktLen += 2;
+	//THIS SEEMS to occasionally drop bytes from the frame. Sometimes is not sending the last frame of the CRC.
+	//(Seems to be caused by stack overflow, so take precautions to reduce stack usage in function calls)
+	sciSend(sciREG, bPktLen, pFrame);
 
-    spiWCRC = SpiCRC16(spiFrame, spiPktLen);
-    *spiPBuf++ = spiWCRC & 0x00FF;
-    *spiPBuf++ = (spiWCRC & 0xFF00) >> 8;
-    spiPktLen += 2;
-
-    spiTransmitData(spiREG3,&dataconfig1_t,spiPktLen,spiFrame);
-
-    return spiPktLen;
+	return bPktLen;
 }
 
 //GENERATE READ COMMAND FRAME AND THEN WAIT FOR RESPONSE DATA (INTERRUPT MODE FOR SCIRX)
-int SpiReadReg(BYTE bID, uint16 wAddr, uint16 * pData, BYTE bLen, uint32 dwTimeOut, BYTE bWriteType) {
+int ReadReg(BYTE bID, uint16 wAddr, BYTE * pData, BYTE bLen, uint32 dwTimeOut,
+        BYTE bWriteType) {
     // device address, register start address, byte frame pointer to store data, data length, read type (single, broadcast, stack)
-
-    bRes = 0; //total bytes received
-
-    while(gioGetBit(gioPORTA, 1) == 0) delayus(1); //wait until SPI_RDY is ready
-
-    //send the read request to the 600
-    spiReturn = bLen - 1;
-    SpiWriteFrame(bID, wAddr, &spiReturn, 1, bWriteType); //send the read request command frame
-    delayus(5*TOTALBOARDS); //wait propagation time for each board
-
-    uint16 * movingPointer = pData;
-
-    //prepare the correct number of bytes for the device to read
-    if (bWriteType == FRMWRT_SGL_R)
-    {
-        M = bLen + 6;
+    bRes = 0;
+    count = 1000000; //timeout after this many attempts
+    if (bWriteType == FRMWRT_SGL_R) {
+        ReadFrameReq(bID, wAddr, bLen, bWriteType);
+        memset(pData, 0, sizeof(pData));
+        sciEnableNotification(sciREG, SCI_RX_INT);
+        sciReceive(sciREG, bLen + 6, pData);
+        while(UART_RX_RDY == 0U && count>0) count--; /* Wait */
+        UART_RX_RDY = 0;
+        bRes = bLen + 6;
+    } else if (bWriteType == FRMWRT_STK_R) {
+        bRes = ReadFrameReq(bID, wAddr, bLen, bWriteType);
+        memset(pData, 0, sizeof(pData));
+        sciEnableNotification(sciREG, SCI_RX_INT);
+        sciReceive(sciREG, (bLen + 6) * (TOTALBOARDS - 1), pData);
+        while(UART_RX_RDY == 0U && count>0) count--; /* Wait */
+        UART_RX_RDY = 0;
+        bRes = (bLen + 6) * (TOTALBOARDS - 1);
+    } else if (bWriteType == FRMWRT_ALL_R) {
+        bRes = ReadFrameReq(bID, wAddr, bLen, bWriteType);
+        memset(pData, 0, sizeof(pData));
+        sciEnableNotification(sciREG, SCI_RX_INT);
+        sciReceive(sciREG, (bLen + 6) * TOTALBOARDS, pData);
+        while(UART_RX_RDY == 0U && count>0) count--; /* Wait */
+        UART_RX_RDY = 0;
+        bRes = (bLen + 6) * TOTALBOARDS;
+    } else {
+        bRes = 0;
     }
-    else if (bWriteType == FRMWRT_STK_R)
-    {
-        M = (bLen + 6) * (TOTALBOARDS - 1);
-    }
-    else if (bWriteType == FRMWRT_ALL_R)
-    {
-        M = (bLen + 6) * TOTALBOARDS;
-    }
-    else
-    {
-        while(1); //infinite loop to catch error
-    }
 
-    //prepare the number of loops of 128-byte reads that need to occur
-    i = (int)(M/128);
-    //prepare the remainder that is left over after the last full 128-byte read
-    K = M - i*128;
+//    //CHECK IF CRC IS CORRECT
+//    for(crc_i=0; crc_i<bRes; crc_i+=(bLen+6))
+//    {
+//        if(CRC16(&pData[crc_i], bLen+6)!=0)
+//        {
+//            printf("BAD CRC\n");
+//        }
+//    }
 
-    //loop until we've read all data bytes
-    while(i>(-1))
-    {
-        while(gioGetBit(gioPORTA, 1) == 0) delayus(100); //wait until SPI_RDY is ready
-
-        //if there is more than 128 bytes remaining
-        if(i>0)
-        {
-            if (bWriteType == FRMWRT_SGL_R)
-            {
-                spiTransmitAndReceiveData(spiREG3, &dataconfig1_t, 128, FFBuffer, movingPointer);
-            }
-            else if (bWriteType == FRMWRT_STK_R)
-            {
-                spiTransmitAndReceiveData(spiREG3, &dataconfig1_t, 128, FFBuffer, movingPointer);
-            }
-            else if (bWriteType == FRMWRT_ALL_R)
-            {
-                spiTransmitAndReceiveData(spiREG3, &dataconfig1_t, 128, FFBuffer, movingPointer);
-            }
-            movingPointer+=128;
-        }
-
-        //else if there is less than 128 bytes remaining
-        else
-        {
-            if (bWriteType == FRMWRT_SGL_R)
-            {
-                spiTransmitAndReceiveData(spiREG3, &dataconfig1_t, K, FFBuffer, movingPointer);
-                bRes = bLen + 6;
-            }
-            else if (bWriteType == FRMWRT_STK_R)
-            {
-                spiTransmitAndReceiveData(spiREG3, &dataconfig1_t, K, FFBuffer, movingPointer);
-                bRes = (bLen + 6) * (TOTALBOARDS - 1);
-            }
-            else if (bWriteType == FRMWRT_ALL_R)
-            {
-                spiTransmitAndReceiveData(spiREG3, &dataconfig1_t, K, FFBuffer, movingPointer);
-                bRes = (bLen + 6) * TOTALBOARDS;
-            }
-        }
-
-        i--; //decrement the number of groups of 128 bytes
-    }
-    numReads++;
     return bRes;
+}
+
+int ReadFrameReq(BYTE bID, uint16 wAddr, BYTE bByteToReturn, BYTE bWriteType) {
+	bReturn = bByteToReturn - 1;
+
+	if (bReturn > 127)
+		return 0;
+
+	return WriteFrame(bID, wAddr, &bReturn, 1, bWriteType);
 }
 
 // CRC16 TABLE
@@ -385,13 +343,12 @@ const uint16 crc16_table[256] = { 0x0000, 0xC0C1, 0xC181, 0x0140, 0xC301,
 		0x8C41, 0x4400, 0x84C1, 0x8581, 0x4540, 0x8701, 0x47C0, 0x4680, 0x8641,
 		0x8201, 0x42C0, 0x4380, 0x8341, 0x4100, 0x81C1, 0x8081, 0x4040 };
 
-uint32 SpiCRC16(uint16 *pBuf, int nLen)
-{
-    uint32 wCRC = 0xFFFF;
+uint16 CRC16(BYTE *pBuf, int nLen) {
+    uint16 wCRC = 0xFFFF;
     int i;
 
     for (i = 0; i < nLen; i++) {
-        wCRC ^= (uint16)(*pBuf++) & 0x00FF;
+        wCRC ^= (*pBuf++) & 0x00FF;
         wCRC = crc16_table[wCRC & 0x00FF] ^ (wCRC >> 8);
     }
 
@@ -404,18 +361,6 @@ uint32 SpiCRC16(uint16 *pBuf, int nLen)
 //************************
 //MISCELLANEOUS FUNCTIONS
 //************************
-void SpiDisableTimeout_600_616(void)
-{
-    //Disable timeout 600
-    SpiWriteReg(0, 0x2005, 0x00, 1, FRMWRT_SGL_W);
-    //Disable timeout 616
-    SpiWriteReg(0, COMM_CTRL, 0x00, 1, FRMWRT_STK_W);
-}
-
-float Complement(uint16 rawData, float multiplier)
-{
-    return -1*(~rawData+1)*multiplier;
-}
 
 BOOL GetFaultStat() {
 
@@ -477,35 +422,185 @@ void delayms(uint16 ms) {
     }
 }
 
-uint16_t volt2Byte(float volt)
+void ResetAllFaults(BYTE bID, BYTE bWriteType)
 {
-    return (uint16_t)~((int16_t)((-volt/0.00019073)-1.0));
+    //BROADCAST INCLUDES EXTRA FUNCTIONALITY TO OVERWRITE THE CUST_CRC WITH THE CURRENT SETTINGS
+    if(bWriteType==FRMWRT_ALL_W)
+    {
+        //READ THE CALCULATED CUSTOMER CRC VALUES
+        ReadReg(0, CUST_CRC_RSLT_HI, fault_frame, 2, 0, FRMWRT_ALL_R);
+        //OVERWRITE THE CRC OF EVERY BOARD IN THE STACK WITH THE CORRECT CRC
+        for(currentBoard=0; currentBoard<TOTALBOARDS; currentBoard++)
+        {
+            //THE RETURN FRAME STARTS WITH THE HIGHEST BOARD FIRST, SO THIS WILL WRITE THE HIGHEST BOARD FIRST
+            WriteReg(TOTALBOARDS-currentBoard-1, CUST_CRC_HI, fault_frame[currentBoard*8+4] << 8 | fault_frame[currentBoard*8+5], 2, FRMWRT_SGL_W);
+        }
+        //NOW CLEAR EVERY FAULT
+        WriteReg(0, FAULT_RST1, 0xFFFF, 2, FRMWRT_ALL_W);
+    }
+    else if(bWriteType==FRMWRT_SGL_W)
+    {
+        WriteReg(bID, FAULT_RST1, 0xFFFF, 2, FRMWRT_SGL_W);
+    }
+    else if(bWriteType==FRMWRT_STK_W)
+    {
+        WriteReg(0, FAULT_RST1, 0xFFFF, 2, FRMWRT_STK_W);
+    }
+    else
+    {
+        printf("ERROR: ResetAllFaults bWriteType incorrect\n");
+    }
 }
 
-unsigned printConsole(const char *_format, ...)
+void MaskAllFaults(BYTE bID, BYTE bWriteType)
 {
-   char str[128];
-   int length = -1, k = 0;
-
-   va_list argList;
-   va_start( argList, _format );
-
-   length = vsnprintf(str, sizeof(str), _format, argList);
-
-   va_end( argList );
-
-//   if (length > 0)
-//   {
-//      for(k=0; k<length; k++)
-//      {
-//          HetUART1PutChar(str[k]);
-//      }
-//   }
-   sciSend(scilinREG, length, str);
-
-   return (unsigned)length;
+    if(bWriteType==FRMWRT_ALL_W)
+    {
+        WriteReg(0, FAULT_MSK1, 0xFFFF, 2, FRMWRT_ALL_W);
+    }
+    else if(bWriteType==FRMWRT_SGL_W)
+    {
+        WriteReg(bID, FAULT_MSK1, 0xFFFF, 2, FRMWRT_SGL_W);
+    }
+    else if(bWriteType==FRMWRT_STK_W)
+    {
+        WriteReg(0, FAULT_MSK1, 0xFFFF, 2, FRMWRT_STK_W);
+    }
+    else
+    {
+        printf("ERROR: MaskAllFaults bWriteType incorrect\n");
+    }
 }
 
+void PrintAllFaults(BYTE bID, BYTE bWriteType)
+{
+    //PRINT 39 REGISTERS STARTING FROM FAULT_SUMMARY (INCLUDES RESERVED REGISTERS)
+    printf("\n");
+    currentBoard = 0;
+    currentCell = 0;
+    memset(fault_frame,0,sizeof(fault_frame));
+    if(bWriteType==FRMWRT_ALL_R)
+    {
+        ReadReg(0, FAULT_SUMMARY, fault_frame, 39, 0, FRMWRT_ALL_R);
+        for(currentBoard = 0; currentBoard<TOTALBOARDS; currentBoard++)
+        {
+            printf("BOARD %d FAULTS:\t",TOTALBOARDS-currentBoard);
+            for(currentCell = 0; currentCell<39; currentCell++)
+            {
+                printf("%02x ",fault_frame[(currentBoard*(39+6))+4+currentCell]);
+            }
+            printf("\n");
+        }
+    }
+    else if(bWriteType==FRMWRT_SGL_R)
+    {
+        ReadReg(bID, FAULT_SUMMARY, fault_frame, 39, 0, FRMWRT_SGL_R);
+        printf("BOARD %d FAULTS:\t",bID);
+        for(currentCell = 0; currentCell<39; currentCell++)
+        {
+            printf("%02x ",fault_frame[4+currentCell]);
+        }
+        printf("\n");
+    }
+    else if(bWriteType==FRMWRT_STK_R)
+    {
+        ReadReg(0, FAULT_SUMMARY, fault_frame, 39, 0, FRMWRT_STK_R);
+        for(currentBoard = 0; currentBoard<(TOTALBOARDS-1); currentBoard++)
+        {
+            printf("BOARD %d FAULTS:\t",TOTALBOARDS-currentBoard);
+            for(currentCell = 0; currentCell<39; currentCell++)
+            {
+                printf("%02x ",fault_frame[(currentBoard*(39+6))+4+currentCell]);
+            }
+            printf("\n");
+        }
+    }
+    else
+    {
+        printf("ERROR: PrintAllFaults bWriteType incorrect\n");
+    }
+    printf("\n");
+}
+
+//RUN BASIC CELL BALANCING FOR ALL DEVICES
+void RunCB()
+{
+    //SET BALANCING TIMERS TO 30 s
+    WriteReg(0, CB_CELL16_CTRL, 0x0202020202020202, 8, FRMWRT_ALL_W);   //cell 16-9 (8 byte max write)
+    WriteReg(0, CB_CELL8_CTRL, 0x0202020202020202, 8, FRMWRT_ALL_W);    //cell 8-1
+
+    //SET DUTY CYCLE TO 10 s (default)
+    WriteReg(0, BAL_CTRL1, 0x01, 1, FRMWRT_ALL_W);   //10s duty cycle
+
+    //OPTIONAL: SET VCBDONE THRESH TO 3V, AND OVUV_GO
+    WriteReg(0, VCB_DONE_THRESH, 0x08, 1, FRMWRT_ALL_W);    //3V threshold (8*25mV + 2.8V)
+    WriteReg(0, OVUV_CTRL, 0x05, 1, FRMWRT_ALL_W);          //round-robin and OVUV_GO
+
+    //START BALANCING
+    WriteReg(0, BAL_CTRL2, 0x03, 1, FRMWRT_ALL_W); //auto balance and BAL_GO
+}
+
+//RUN BASIC REVERSE ADDRESSING SEQUENCE
+void ReverseAddressing()
+{
+    //CHANGE BASE DEVICE DIRECTION
+    WriteReg(0, CONTROL1, 0x80, 1, FRMWRT_SGL_W);
+
+    //CHANGE REST OF STACK DIRECTION
+    WriteReg(0, CONTROL1, 0x80, 1, FRMWRT_REV_ALL_W);
+
+    //DO NORMAL AUTO ADDRESS SEQUENCE, BUT FOR DIR1_ADDR
+    //DUMMY WRITE TO SNCHRONIZE ALL DAISY CHAIN DEVICES DLL (IF A DEVICE RESET OCCURED PRIOR TO THIS)
+    WriteReg(0, OTP_ECC_DATAIN1, 0X00, 1, FRMWRT_ALL_W);
+    WriteReg(0, OTP_ECC_DATAIN2, 0X00, 1, FRMWRT_ALL_W);
+    WriteReg(0, OTP_ECC_DATAIN3, 0X00, 1, FRMWRT_ALL_W);
+    WriteReg(0, OTP_ECC_DATAIN4, 0X00, 1, FRMWRT_ALL_W);
+    WriteReg(0, OTP_ECC_DATAIN5, 0X00, 1, FRMWRT_ALL_W);
+    WriteReg(0, OTP_ECC_DATAIN6, 0X00, 1, FRMWRT_ALL_W);
+    WriteReg(0, OTP_ECC_DATAIN7, 0X00, 1, FRMWRT_ALL_W);
+    WriteReg(0, OTP_ECC_DATAIN8, 0X00, 1, FRMWRT_ALL_W);
+
+    //ENABLE AUTO ADDRESSING MODE, WHILE KEEPING REVERSE DIRECTION
+    WriteReg(0, CONTROL1, 0X81, 1, FRMWRT_ALL_W);
+
+    //SET ADDRESSES FOR EVERY BOARD (REVERSE DIRECTION)
+    for(currentBoard=0; currentBoard<TOTALBOARDS; currentBoard++)
+    {
+        WriteReg(0, DIR1_ADDR, currentBoard, 1, FRMWRT_ALL_W);
+    }
+
+    WriteReg(0, COMM_CTRL, 0x02, 1, FRMWRT_ALL_W); //set everything as a stack device first
+
+    if(TOTALBOARDS==1) //if there's only 1 board, it's the base AND top of stack, so change it to those
+    {
+        WriteReg(0, COMM_CTRL, 0x01, 1, FRMWRT_SGL_W);
+    }
+    else //otherwise set the base and top of stack individually
+    {
+        WriteReg(0, COMM_CTRL, 0x00, 1, FRMWRT_SGL_W);
+        WriteReg(TOTALBOARDS-1, COMM_CTRL, 0x03, 1, FRMWRT_SGL_W);
+    }
+
+    //SYNCRHONIZE THE DLL WITH A THROW-AWAY READ
+    ReadReg(0, OTP_ECC_DATAIN1, response_frame2, 1, 0, FRMWRT_ALL_R);
+    ReadReg(0, OTP_ECC_DATAIN2, response_frame2, 1, 0, FRMWRT_ALL_R);
+    ReadReg(0, OTP_ECC_DATAIN3, response_frame2, 1, 0, FRMWRT_ALL_R);
+    ReadReg(0, OTP_ECC_DATAIN4, response_frame2, 1, 0, FRMWRT_ALL_R);
+    ReadReg(0, OTP_ECC_DATAIN5, response_frame2, 1, 0, FRMWRT_ALL_R);
+    ReadReg(0, OTP_ECC_DATAIN6, response_frame2, 1, 0, FRMWRT_ALL_R);
+    ReadReg(0, OTP_ECC_DATAIN7, response_frame2, 1, 0, FRMWRT_ALL_R);
+    ReadReg(0, OTP_ECC_DATAIN8, response_frame2, 1, 0, FRMWRT_ALL_R);
+
+    ////OPTIONAL: read back all device addresses
+    //for(currentBoard=0; currentBoard<TOTALBOARDS; currentBoard++)
+    //{
+    //    ReadReg(currentBoard, DIR0_ADDR, response_frame2, 1, 0, FRMWRT_SGL_R);
+    //    printf("board %d\n",response_frame2[4]);
+    //}
+
+    //RESET ANY COMM FAULT CONDITIONS FROM STARTUP
+    WriteReg(0, FAULT_RST2, 0x03, 1, FRMWRT_ALL_W);
+}
 //***************************
 //END MISCELLANEOUS FUNCTIONS
 //***************************

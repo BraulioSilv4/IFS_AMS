@@ -1,10 +1,10 @@
 /** @file sys_main.c 
-*   @brief Application main file
-*   @date July 2020
-*   @version 2.0
-*
-*   This file contains an empty main function,
-*   which can be used for the application.
+*   @author Vince Toledo - Texas Instruments Inc.
+*   @date February 2020
+*   @version 1.2
+*   @note Built with CCS for Hercules Version: 8.1.0.00011
+*   @note Built for TMS570LS1224 (LAUNCH XL2)
+*   @brief This file contains and calls sample functions for the BQ79616-Q1
 */
 
 /* 
@@ -44,15 +44,32 @@
 
 /* USER CODE BEGIN (0) */
 
-
 /*
- * CONNECTIONS BETWEEN BQ79600EVM-030 AND LAUNCHXL2-TMS57012 (TMS570LS1224):
- * See BQ79600EVM-030 User's Guide, section 4.3 "Connecting the BQ79600EVM to TMS570 LaunchPad" for instructions on how to directly plug-in the BQ79600EVM to the MCU LaunchPad
- * **********NOTE: Make sure R8 and R10 are populated, and R7 and R9 are removed from the BQ79600EVM***********
+ * A0 SILICON - CONNECTIONS BETWEEN BQ79616EVM AND LAUNCH XL2 (TMS570LS1224)::
+ * bq79616EVM J3 pin 1 (GND)    -> LAUNCH XL2 J3 pin 2  (GND)
+ * bq79616EVM J3 pin 2 (NFAULT) -> LAUNCH XL2 J4 pin 10 (PA0)
+ * bq79616EVM J3 pin 3 (NC)     -> FLOAT
+ * bq79616EVM J3 pin 4 (RX)     -> LAUNCH XL2 J2 pin 4  (UATX)
+ * bq79616EVM J3 pin 5 (TX)     -> LAUNCH XL2 J2 pin 3  (UARX)
+ * bq79616EVM J3 pin 6 (NC)     -> FLOAT
+
+ * B0 SILICON - CONNECTIONS BETWEEN BQ79616EVM AND LAUNCH XL2 (TMS570LS1224)::
+ * bq79616EVM J17 pin 1 (NC)     -> FLOAT
+ * bq79616EVM J17 pin 2 (NC)     -> FLOAT
+ * bq79616EVM J17 pin 3 (NFAULT) -> LAUNCH XL2 J4 pin 10 (PA0)
+ * bq79616EVM J17 pin 4 (NC)     -> FLOAT
+ * bq79616EVM J17 pin 5 (GND)    -> LAUNCH XL2 J3 pin 2  (GND)
+ * bq79616EVM J17 pin 6 (3V3)    -> LAUNCH XL2 J2 pin 1  (3V3)
+ * bq79616EVM J17 pin 7 (RX)     -> LAUNCH XL2 J2 pin 4  (UATX)
+ * bq79616EVM J17 pin 8 (TX)     -> LAUNCH XL2 J2 pin 3  (UARX)
+ * bq79616EVM J17 pin 9 (NC)     -> FLOAT
+ * bq79616EVM J17 pin 10 (NC)    -> FLOAT
  *
- * RELEVANT MODIFIED FILES:
- * bq79616.h        must change TOTALBOARDS in this file (based on setup) for code to function
+ * RELEVANT FILES:
+ * bq79616.h        must change TOTALBOARDS and MAXBYTES here for code to function
  * bq79616.c        contains all relevant functions used in the sample code
+ * A0_reg.h         A0 silicon revision register map (choose only one register map in bq79616.h)
+ * B0_reg.h         B0 silicon revision register map
  * notification.c   sets UART_RX_RDY and RTI_TIMEOUT when their respective interrupts happen
  * .dil/.hcg        used for generating the basic TMS570LS1224 code files, can be used to make changes to the microcontroller
  */
@@ -65,11 +82,9 @@
 
 /* USER CODE BEGIN (1) */
 #include "bq79616.h"
-#include "bq79600.h"
 #include "system.h"
 #include "gio.h"
 #include "sci.h"
-#include "spi.h"
 #include "rti.h"
 #include "sys_vim.h"
 #include <math.h>
@@ -93,87 +108,103 @@ int main(void)
 {
 /* USER CODE BEGIN (3) */
 
+    //***********************************************************************************************
+    //NOTE: CHANGE TOTALBOARDS VARIABLE IN "bq79616.h" to match the number of boards in your system
+    //***********************************************************************************************
     //INITIALIZE TMS570LS1224
-    systemInit();
-    gioInit();
-    sciInit();
-    spiInit();
-    rtiInit();
-    sciSetBaudrate(sciREG, 1000000);
-    vimInit();
-    _enable_IRQ();
 
-    //write 0xFF during read commands, initialize this 0xFF buffer
-    memset(FFBuffer, 0xFF, sizeof(FFBuffer));
+    //INITIALIZE BQ79616-Q1
+    //need 2 wakes as this particular microcontroller outputs RX=0 by default, and so puts devices into hardware reset while the program is being loaded
+    Wake79616();
+    delayms(12*TOTALBOARDS); //wake tone duration is ~1.6ms per board + 10ms per board for each device to wake up from shutdown = 11.6ms per 616 board (rounded to 12ms since variable used is an integer)
+    Wake79616();
+    delayms(12*TOTALBOARDS); //wake tone duration is ~1.6ms per board + 10ms per board for each device to wake up from shutdown = 11.6ms per 616 board (rounded to 12ms since variable used is an integer)
 
-    //configure SPI behavior
-    dataconfig1_t.CS_HOLD = 1;
-    dataconfig1_t.WDEL    =  FALSE;
+    AutoAddress();
+    delayus(4000); //4ms total required after shutdown to wake transition for AFE settling time, this is for top device only
+    WriteReg(0, FAULT_MSK2, 0x40, 1, FRMWRT_ALL_W); //MASK CUST_CRC SO CONFIG CHANGES DON'T FLAG A FAULT
+    ResetAllFaults(0, FRMWRT_ALL_W); //CLEAR ALL FAULTS
 
     //VARIABLES
-    uint16 response_frame[(128+6)*TOTALBOARDS]; //store 128 bytes + 6 header bytes for each board
-
-    printf("\n\n\nBeginning Program\n");
-
-    //INITIALIZE 600
-    //two wakes in case the MCU had nCS and MOSI = 0 at start (which would put the device in shutdown) or in case the device was previously put in shutdown through a shutdown ping
-    SpiWake79600(); //send wake ping to bridge device
-    delayus(3500); //wait tSU(WAKE_SHUT), at least 3.5ms
-    SpiWake79600(); //send wake ping to bridge device
-    delayus(3500); //tSU(WAKE_SHUT), at least 3.5ms
-
-    //INITIALIZE BQ79616-Q1 STACK
-    SpiWriteReg(0, CONTROL1, 0x20, 1, FRMWRT_SGL_W); //send wake tone to stack devices
-    delayms(11.6*TOTALBOARDS); //wake tone duration is ~1.6ms per board + 10ms per board for each device to wake up from shutdown = 11.6ms per 616 board.
-
-    //AUTO-ADDRESS
-    SpiAutoAddress(); //auto address sequence
-
-    //RESET ANY COMM FAULT CONDITIONS FROM STARTUP
-    SpiWriteReg(0, FAULT_RST1, 0xFF, 1, FRMWRT_STK_W); //Reset faults on stacked devices
-    SpiWriteReg(0, FAULT_RST2, 0xFF, 1, FRMWRT_STK_W); //Reset faults on stacked devices
-    SpiWriteReg(0, Bridge_FAULT_RST, 0x22, 1, FRMWRT_SGL_W); //Reset FAULT_COMM and FAULT_SYS on bridge device
-
-    //ENABLE BQ79616-Q1 MAIN ADC
-    SpiWriteReg(0, ACTIVE_CELL, 0x0A, 1, FRMWRT_STK_W); //set all cells to active
-    SpiWriteReg(0, ADC_CTRL1, 0x06, 1, FRMWRT_STK_W);   //continuous run and MAIN_GO
-    delayus(5*TOTALBOARDS + 192);                       //5us reclocking per board and 192us for round robin to complete
-
-    //LOOP VARIABLES
-    int channel = 0;            //iterators
+    int i = 0;
     int currentBoard = 0;
+
+    //ARRAYS (MUST place out of loop so not re-allocated every iteration)
+    BYTE response_frame[(16*2+6)*TOTALBOARDS]; //hold all 16 vcell*_hi/lo values
+
+    //OPTIONAL EXAMPLE FUNCTIONS
+    //RunCB();
+    //ReverseAddressing();
+
+    //set up the main ADC
+    WriteReg(0, ACTIVE_CELL, 0x0A, 1, FRMWRT_ALL_W);    //set all cells to active
+    WriteReg(0, ADC_CONF1, 0x02, 1, FRMWRT_ALL_W);      //26Hz LPF_Vcell (38ms average)
+    WriteReg(0, ADC_CTRL1, 0x0E, 1, FRMWRT_ALL_W);      //continuous run, LPF enabled and MAIN_GO
+    delayus(38000+5*TOTALBOARDS);                       //initial delay to allow LPF to average for 38ms (26Hz LPF setting used)
+
+    //**********
+    //MAIN LOOP
+    //**********
     do
     {
-        channel = 0;
+        //*******************
+        //READ CELL VOLTAGES
+        //*******************
+        //reset variables
+        i = 0;
         currentBoard = 0;
+
+        //clear out the array so we know we have fresh data every loop
+        memset(response_frame,0,sizeof(response_frame));
+
+        //wait single round robin cycle time + reclocking delay for each device, every loop
         delayus(192+5*TOTALBOARDS);
-        SpiReadReg(0, VCELL16_HI+(16-ACTIVECHANNELS)*2, response_frame, ACTIVECHANNELS*2, 0, FRMWRT_STK_R);
+
+        //read all the values (HI/LO for each cell = 32 total)
+        ReadReg(0, VCELL16_HI, response_frame, 16*2, 0, FRMWRT_ALL_R);
 
         /*
          * ***********************************************
-         * NOTE: SOME COMPUTERS HAVE ISSUES RECEIVING
-         * A LARGE AMOUNT OF DATA VIA printf STATEMENTS.
+         * NOTE: SOME COMPUTERS HAVE ISSUES TRANSMITTING
+         * A LARGE AMOUNT OF DATA VIA PRINTF STATEMENTS.
          * THE FOLLOWING PRINTOUT OF THE RESPONSE DATA
          * IS NOT GUARANTEED TO WORK ON ALL SYSTEMS.
          * ***********************************************
         */
 
-        printf("\n"); //start with a newline to add some extra spacing between each loop
-        //only read/print the base device's data if there is no bridge device
-        for(currentBoard=0; currentBoard<( BRIDGEDEVICE==1 ? TOTALBOARDS-1 : TOTALBOARDS); currentBoard++)
+        //format and print the resultant response frame
+        printf("\n"); //start with a newline to add some extra spacing between loop
+        for(currentBoard=0; currentBoard<TOTALBOARDS; currentBoard++)
         {
-            printf("BOARD %d:\t",TOTALBOARDS-currentBoard-1);
-            //print the data from each active channel (2 bytes each channel)
-            for(channel=0; channel<(ACTIVECHANNELS*2); channel+=2)
+            //response frame actually starts with top of stack, so currentBoard is actually inverted from what it should be
+            printf("BOARD %d:\t",TOTALBOARDS-currentBoard);
+
+            //go through each byte in the current board (32 bytes = 16 cells * 2 bytes each)
+            for(i=0; i<32; i+=2)
             {
-                int boardByteStart = (ACTIVECHANNELS*2+6)*currentBoard;
-                uint16 rawData = (response_frame[boardByteStart+channel+4] << 8) | response_frame[boardByteStart+channel+5];
-                float cellVoltage = rawData*0.00019073; //rawData*VLSB_ADC
-                printf("%f\t", cellVoltage);
+                //each board responds with 32 data bytes + 6 header bytes
+                //so need to find the start of each board by doing that * currentBoard
+                int boardByteStart = (16*2+6)*currentBoard;
+
+                //convert the two individual bytes of each cell into a single 16 bit data item (by bit shifting)
+                uint16 rawData = (response_frame[boardByteStart+i+4] << 8) | response_frame[boardByteStart+i+5];
+
+                //cast as a signed 16 bit data item, and multiply by 190.73uV to get an actual voltage
+                float cellVoltage = ((int16_t)rawData)*0.00019073;
+
+                //print the voltages - it is (32-i)/2 because cells start from 16 down to 1
+                //and there are 2 bytes per cell (i value is twice the cell number)
+                printf("Cell %d = %f\t", (32-i)/2, cellVoltage);
             }
             printf("\n"); //newline per board
         }
+        //**********************
+        //END READ CELL VOLTAGES
+        //**********************
     }while(1);
+    //**************
+    //END MAIN LOOP
+    //**************
 
 /* USER CODE END */
 
