@@ -20,6 +20,7 @@
 
 
 #include "Arduino.h"
+#include "SPI.h"
 #include "stdint.h"
 #include "stdio.h"
 #include "stdbool.h"
@@ -33,12 +34,16 @@
 #include "B0_reg.h"
 
 // User defines
-#define TOTALBOARDS 1       //boards in stack
+#define TOTALBOARDS 1      //boards in stack
 #define CELL_TEMP_NUM 8
 #define ACTIVECHANNELS 16   //channels to activate (incomplete, does not work right now)
 #define BRIDGEDEVICE 0   //
 #define MAXcharS (16*2)     //maximum number of chars to be read from the devices (for array creation)
 #define BAUDRATE 1000000    //device + uC baudrate
+#define nCS 2               //chip select pin
+#define SPI_RDY 3           //SPI ready pin
+#define nFAULT 4            //fault pin
+#define MOSI 75            //SPI MOSI pin
 
 #define FRMWRT_SGL_R	0x00    //single device READ
 #define FRMWRT_SGL_W	0x10    //single device WRITE
@@ -50,13 +55,12 @@
                   
 // namespace bq{
 // Function Prototypes
-void Wake79616();
-void Wake79606();
+void SpiWake79600(void);
 void HWRST79616();
 void CommClear(void);
 void CommSleepToActive(void);
 void CommReset(void);
-void AutoAddress();
+void SpiAutoAddress();
 void AutoAddress2();
 void set_registers(void);
 void restart_chips(void);
@@ -65,12 +69,14 @@ float Complement(uint16_t rawData, float multiplier);
 
 uint16_t CRC16(char *pBuf, int nLen);
 
-int  WriteReg(char bID, uint16_t wAddr, uint64_t dwData, char bLen, char bWriteType);
-int  WriteRegBad(char bID, uint16_t wAddr, uint64_t dwData, char bLen, char bWriteType);
-int  ReadReg(char bID, uint16_t wAddr, char * pData, char bLen, uint32_t dwTimeOut, char bWriteType);
+int SpiWriteReg(char bID, uint16_t wAddr, uint64_t dwData, char bLen, char bWriteType);
+int SpiWriteFrame(uint16_t bID, uint16_t wAddr, uint16_t * pData, uint16_t bLen, uint8_t bWriteType);
+uint32_t SpiCRC16(uint16_t *pBuf, int nLen);
+void SpiExchange(uint16_t *data, int len);
+int isSPIReady();
 
-int  WriteFrame(char bID, uint16_t wAddr, char * pData, char bLen, char bWriteType);
-int  WriteBadFrame(char bID, uint16_t wAddr, char * pData, char bLen, char bWriteType);
+int SpiReadReg(char bID, uint16_t wAddr, uint16_t * pData, char bLen, uint32_t dwTimeOut, char bWriteType);
+
 int  ReadFrameReq(char bID, uint16_t wAddr, char bcharToReturn,char bWriteType);
 int  ReadFrameReqBad(char bID, uint16_t wAddr, char bcharToReturn);
 int  WaitRespFrame(char *pFrame, uint32_t bLen, uint32_t dwTimeOut);
