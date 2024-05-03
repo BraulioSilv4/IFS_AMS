@@ -119,13 +119,13 @@ void SpiAutoAddress()
     SpiReadReg(0, OTP_ECC_DATAIN7, autoaddr_response_frame, 1, 0, FRMWRT_STK_R);
     SpiReadReg(0, OTP_ECC_DATAIN8, autoaddr_response_frame, 1, 0, FRMWRT_STK_R);
 
-    Serial.println("Synchronize the dll");
+    //Serial.println("Synchronize the dll");
     //OPTIONAL: read back all device addresses
     for(currentBoard=0; currentBoard<TOTALBOARDS; currentBoard++)
     {
         SpiReadReg(currentBoard, DIR0_ADDR, autoaddr_response_frame, 1, 0, FRMWRT_SGL_R);
     }
-    Serial.println("read back all devices address ^");
+    //Serial.println("read back all devices address ^");
 
     //OPTIONAL: read register address 0x2001 and verify that the value is 0x14
     SpiReadReg(0, 0x2001, autoaddr_response_frame, 1, 0, FRMWRT_SGL_R);
@@ -234,11 +234,7 @@ int SpiWriteFrame(uint16_t bID, uint16_t wAddr, uint16_t * pData, uint16_t bLen,
     spiPktLen += 2;
 
     
-    for (int i = 0; i < spiPktLen; i++) {
-        Serial.print(spiFrame[i], HEX);
-        Serial.print(" ");
-    }
-    Serial.print("\n");
+    
 
     SpiExchange(spiFrame, spiPktLen);
     delay(1);
@@ -251,16 +247,18 @@ int SpiReadReg(char bID, uint16_t wAddr, uint16_t * pData, char bLen, uint32_t d
     // device address, register start address, byte frame pointer to store data, data length, read type (single, broadcast, stack)
 
     bRes = 0; //total bytes received
+
+    //Serial.println(isSPIReady());
     while(!isSPIReady()) {
         delayMicroseconds(1); //wait until SPI_RDY is ready
-        Serial.println("I want to break free");
     }
-    
     //send the read request to the 600
     spiReturn = bLen - 1;
     SpiWriteFrame(bID, wAddr, &spiReturn, 1, bWriteType); //send the read request command frame
     delayMicroseconds(5*TOTALBOARDS); //wait propagation time for each board
-    
+
+    //Serial.println(isSPIReady());
+
     uint16_t * movingPointer = pData;
     
     //prepare the correct number of bytes for the device to read
@@ -291,33 +289,31 @@ int SpiReadReg(char bID, uint16_t wAddr, uint16_t * pData, char bLen, uint32_t d
     {
         while(!isSPIReady()) {
             delayMicroseconds(100);
-            Serial.println("A");;
         }  //wait until SPI_RDY is ready
         //if there is more than 128 bytes remaining
         if(i>0)
         {
             if (bWriteType == FRMWRT_SGL_R)
             {
-                Serial.println("Hwllo");
                 digitalWrite(nCS, LOW);
-                for(int i = 0; i < 128; i++){
-                    SPI.transfer(0x00);
+                for(int i = 0; i < K; i++){
+                    pData[i] = SPI.transfer(0xFF);
                 }
                 digitalWrite(nCS, HIGH);
             }
             else if (bWriteType == FRMWRT_STK_R)
             {
                 digitalWrite(nCS, LOW);
-                for(int i = 0; i < 128; i++){
-                    SPI.transfer(0x00);
+                for(int i = 0; i < K; i++){
+                    pData[i] = SPI.transfer(0xFF);
                 }
                 digitalWrite(nCS, HIGH);
             }
             else if (bWriteType == FRMWRT_ALL_R)
             {
                 digitalWrite(nCS, LOW);
-                for(int i = 0; i < 128; i++){
-                    SPI.transfer(0x00);
+                for(int i = 0; i < K; i++){
+                    pData[i] = SPI.transfer(0xFF);
                 }
                 digitalWrite(nCS, HIGH);
             }
@@ -331,7 +327,7 @@ int SpiReadReg(char bID, uint16_t wAddr, uint16_t * pData, char bLen, uint32_t d
             {
                 digitalWrite(nCS, LOW);
                 for(int i = 0; i < K; i++){
-                    SPI.transfer(0x00);
+                    pData[i] = SPI.transfer(0xFF);
                 }
                 digitalWrite(nCS, HIGH);
                 bRes = bLen + 6;
@@ -340,7 +336,7 @@ int SpiReadReg(char bID, uint16_t wAddr, uint16_t * pData, char bLen, uint32_t d
             {
                 digitalWrite(nCS, LOW);
                 for(int i = 0; i < K; i++){
-                    SPI.transfer(0x00);
+                    pData[i] = SPI.transfer(0xFF);
                 }
                 digitalWrite(nCS, HIGH);
                 bRes = (bLen + 6) * (TOTALBOARDS - 1);
@@ -349,7 +345,7 @@ int SpiReadReg(char bID, uint16_t wAddr, uint16_t * pData, char bLen, uint32_t d
             {
                 digitalWrite(nCS, LOW);
                 for(int i = 0; i < K; i++){
-                    SPI.transfer(0x00);
+                    pData[i] = SPI.transfer(0xFF);
                 }
                 digitalWrite(nCS, HIGH);
                 bRes = (bLen + 6) * TOTALBOARDS;
@@ -427,7 +423,7 @@ uint16_t CRC16(char *pBuf, int nLen) {
 
     Serial.print("\nCRCOUT = ");
     for (i = 0; i < nLen; i++) {
-        Serial.println(pBuf[i], HEX);
+        //Serial.println(pBuf[i], HEX);
         wCRC ^= (*pBuf++) & 0x00FF;
         wCRC = crc16_table[wCRC & 0x00FF] ^ (wCRC >> 8);
     }
