@@ -1,22 +1,67 @@
 #include <AMSMaster_Utils.hpp>
 
+int raw_data = 0;
+uint16_t response_frame[RESPONSE_FRAME_SIZE];
+uint16_t fault_response_frame[FAULT_FRAME_SIZE];
+
 void setup() {
     Serial.begin(ARDUINO_DUE_BAUDRATE);
     wakeSequence();
 }
 
 void loop() {
-    std::map<int, float> cellData = readCells(DEVICE, TOTALBOARDS);
-    std::map<int, float>::iterator it = cellData.begin();
+    std::vector<CellVoltage> cellData = readCells(DEVICE, TOTALBOARDS);
+    std::vector<CellVoltage>::iterator it = cellData.begin();
 
+    // std::vector<DIETemperature> dieTempData = readTemperatures(DEVICE, TOTALBOARDS);
+    // std::vector<DIETemperature>::iterator it2 = dieTempData.begin();
+    
+    Serial.println("\nCell Data:");
     while (it != cellData.end()) {
         Serial.print("Channel: ");
-        Serial.print(it->first);
+        Serial.print(it->channel);
         Serial.print(" Voltage: ");
-        Serial.print(it->second, 6);
+        Serial.print(it->voltage, 6);
         Serial.println(" V");
         it++;
     }
+
+
+    Serial.println();
+
+    SpiReadReg(DEVICE, FAULT_SYS, fault_response_frame, 1, 0, FRMWRT_STK_R);
+
+    for (size_t i = 0; i < 7; i++)
+    {
+        Serial.print(fault_response_frame[i], HEX);
+        Serial.print(" ");
+    }
+    
+    
+
+
+
+    /*
+    Serial.println("Die Temp Data:");
+    while (it2 != dieTempData.end()) {
+        Serial.print("Die: ");
+        Serial.print(it2->die);
+        Serial.print(" Temp: ");
+        Serial.print(it2->temperature, 2);
+        Serial.println(" Cº");
+        it2++;
+    }
+    SpiReadReg(0, DIETEMP1_HI, response_frame, 2, 0, FRMWRT_STK_R);
+
+    raw_data = (response_frame[4] << 8) | response_frame[5];
+
+    float die_temp = raw_data * 0.00390625;
+    Serial.print("Die Temp: ");
+    Serial.print(die_temp, 2);
+    Serial.println(" C");
+
+    delay(1000);
+    */
 }
 
  /*

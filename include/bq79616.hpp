@@ -47,10 +47,14 @@
 
 // Device defines
 #define N_CELLS 16          //number of cells per device
-#define REGISTER_SIZE 2     //size of register in bytes
+#define CELL_REGISTER_SIZE 2     //size of register in bytes
+#define REGISTER_SIZE 1   //size of register in bytes
 #define HEADER_SIZE 4       //size of header in bytes
 #define FOOTER_SIZE 2       //size of footer in bytes (CRC)
-#define RESPONSE_FRAME_SIZE (N_CELLS*REGISTER_SIZE + (HEADER_SIZE + FOOTER_SIZE))*TOTALBOARDS //size of frame in bytes
+#define RESPONSE_FRAME_SIZE (N_CELLS*CELL_REGISTER_SIZE + (HEADER_SIZE + FOOTER_SIZE))*TOTALBOARDS //size of frame in bytes
+//#define CELL_TEMP_NUM 2     //number of cell temperature sensors
+//#define TEMP_FRAME_SIZE (CELL_TEMP_NUM*REGISTER_SIZE + (HEADER_SIZE + FOOTER_SIZE))*TOTALBOARDS //size of frame in bytes
+#define FAULT_FRAME_SIZE (REGISTER_SIZE + (HEADER_SIZE + FOOTER_SIZE))*TOTALBOARDS
 
 #define FRMWRT_SGL_R	0x00    //single device READ
 #define FRMWRT_SGL_W	0x10    //single device WRITE
