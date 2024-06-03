@@ -67,16 +67,7 @@
 // namespace bq{
 // Function Prototypes
 void SpiWake79600(void);
-void HWRST79616();
-void CommClear(void);
-void CommSleepToActive(void);
-void CommReset(void);
 void SpiAutoAddress();
-void AutoAddress2();
-void set_registers(void);
-void restart_chips(void);
-bool GetFaultStat();
-float Complement(uint16_t rawData, float multiplier);
 
 uint16_t CRC16(char *pBuf, int nLen);
 
@@ -88,21 +79,10 @@ int isSPIReady();
 
 int SpiReadReg(char bID, uint16_t wAddr, uint16_t * pData, char bLen, uint32_t dwTimeOut, char bWriteType);
 
-int  ReadFrameReq(char bID, uint16_t wAddr, char bcharToReturn,char bWriteType);
-int  ReadFrameReqBad(char bID, uint16_t wAddr, char bcharToReturn);
-int  WaitRespFrame(char *pFrame, uint32_t bLen, uint32_t dwTimeOut);
-
 // void delayms(uint16_t ms);
 // void delayus(uint16_t us);
 
 void ResetAllFaults(char bID, char bWriteType);
-void MaskAllFaults(char bID, char bWriteType);
-
-void PrintFrame(char arr[], int chars);
-unsigned printConsole(const char *_format, ...);
-
-uint16_t volt2char(float volt);
-
 
 struct BMS_status{
     uint16_t cell_voltages[16];

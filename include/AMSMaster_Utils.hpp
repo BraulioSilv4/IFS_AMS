@@ -2,18 +2,7 @@
 #define AMSMASTER_UTILS_HPP_
 
 #include <vector>
-
-// Check and undefine min and max macros
-#ifdef min
-#undef min
-#endif
-
-#ifdef max
-#undef max
-#endif
-
-#include <algorithm> // Ensure this is included after undefining macros
-
+#include <InterpolationLib.h>
 #include <bq79616.hpp>
 
 #define ARDUINO_DUE_BAUDRATE    9600
@@ -24,24 +13,36 @@ struct CellVoltage {
     float voltage;
 };
 
-struct DIETemperature {
-    int die;
-    float temperature;
+struct CellTemperature {
+    int channel;
+    double temperature;
+};
+
+struct FAULT_DATA {
+    int fault;
+    int data;
 };
 
 enum FAULTS {
     FAULT_PWR_,
     FAULT_SYS_,
-    FAULT_REG_,
+    FAULT_OVUV_,
+    FAULT_OTUT_,
     FAULT_COMM_,
+    FAULT_OTP_,
+    FAULT_COMP_ADC_,
+    FAULT_PROT_
 };
 
+String getFaultSummaryString(FAULTS fault);
+String getFaultString(FAULTS highLevelFault, int lowLevelFault);
 float complement(uint16_t raw_data);
 void wakeSequence();
 std::vector<CellVoltage> readCells(int device, int totalBoards);
-std::vector<DIETemperature> readTemperatures(int device, int totalBoards);
-std::vector<FAULTS> readFaults(int device, int totalBoards);
-
+std::vector<CellTemperature> calculateCellTemperatures(std::vector<CellVoltage> cellData);
+std::vector<FAULTS> readFaults(int device, int totalBoards, int faultRegister = FAULT_SUMMARY);
+std::vector<int> getLowLevelFaultRegisters(FAULTS fault);
+int getFaultData(int device, int faultRegister);
 
 #endif // AMSMASTER_UTILS_HPP_
 //EOF

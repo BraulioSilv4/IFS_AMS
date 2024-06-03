@@ -79,6 +79,32 @@ void SpiWake79600(void) {
     delayMicroseconds(2);
     digitalWrite(nCS, HIGH);
 }
+
+void ResetAllFaults(char bID, char bWriteType)
+{
+    if(bWriteType==FRMWRT_ALL_W)
+    {
+        SpiReadReg(0, CUST_CRC_RSLT_HI, fault_frame, 2, 0, FRMWRT_ALL_R);
+        for(currentBoard=0; currentBoard<TOTALBOARDS; currentBoard++)
+        {
+            SpiWriteReg(TOTALBOARDS-currentBoard-1, CUST_CRC_HI, fault_frame[currentBoard*8+4] << 8 | fault_frame[currentBoard*8+5], 2, FRMWRT_SGL_W);
+        }
+        SpiWriteReg(0, FAULT_RST1, 0xFFFF, 2, FRMWRT_ALL_W);
+    }
+    else if(bWriteType==FRMWRT_SGL_W)
+    {
+        SpiWriteReg(bID, FAULT_RST1, 0xFFFF, 2, FRMWRT_SGL_W);
+    }
+    else if(bWriteType==FRMWRT_STK_W)
+    {
+        SpiWriteReg(0, FAULT_RST1, 0xFFFF, 2, FRMWRT_STK_W);
+    }
+    else
+    {
+        Serial.println("ERROR: ResetAllFaults bWriteType incorrect\n");
+    }
+}
+
 //**********************
 //AUTO ADDRESS SEQUENCE
 //**********************

@@ -1,6 +1,5 @@
 #include <AMSMaster_Utils.hpp>
 
-int raw_data = 0;
 uint16_t response_frame[RESPONSE_FRAME_SIZE];
 uint16_t fault_response_frame[FAULT_FRAME_SIZE];
 
@@ -13,10 +12,7 @@ void loop() {
     std::vector<CellVoltage> cellData = readCells(DEVICE, TOTALBOARDS);
     std::vector<CellVoltage>::iterator it = cellData.begin();
 
-    // std::vector<DIETemperature> dieTempData = readTemperatures(DEVICE, TOTALBOARDS);
-    // std::vector<DIETemperature>::iterator it2 = dieTempData.begin();
-    
-    Serial.println("\nCell Data:");
+    Serial.println("\n\nCell Data:");
     while (it != cellData.end()) {
         Serial.print("Channel: ");
         Serial.print(it->channel);
@@ -26,19 +22,48 @@ void loop() {
         it++;
     }
 
+    std::vector<CellTemperature> cellTempData = calculateCellTemperatures(cellData);
+    std::vector<CellTemperature>::iterator it2 = cellTempData.begin();
 
-    Serial.println();
-
-    SpiReadReg(DEVICE, FAULT_SYS, fault_response_frame, 1, 0, FRMWRT_STK_R);
-
-    for (size_t i = 0; i < 7; i++)
-    {
-        Serial.print(fault_response_frame[i], HEX);
-        Serial.print(" ");
+    Serial.println("\nCell Temp Data:");
+    while (it2 != cellTempData.end()) {
+        Serial.print("Channel: ");
+        Serial.print(it2->channel);
+        Serial.print(" Temp: ");
+        Serial.print(it2->temperature, 2);
+        Serial.println(" C");
+        it2++;
     }
-    
-    
 
+    std::vector<FAULTS> faultData = readFaults(DEVICE, TOTALBOARDS, FAULT_SUMMARY);
+    //std::vector<FAULTS> faultData = {FAULT_COMP_ADC_, FAULT_OTUT_, FAULT_SYS_};  // Test faults
+    std::vector<FAULTS>::iterator it1 = faultData.begin();
+    
+    
+    Serial.println("\nFault Data:");
+    if (faultData.empty()) {
+        Serial.println("No faults detected.");
+    } else {
+        while (it1 != faultData.end()) {
+            Serial.print("\nFault: ");
+            Serial.println(getFaultSummaryString(*it1));
+
+            std::vector<int> lowLevelFaultRegisters = getLowLevelFaultRegisters(*it1);
+            std::vector<int>::iterator it2 = lowLevelFaultRegisters.begin();
+
+            Serial.print("Low Level Fault Registers of Fault ");
+            Serial.print(getFaultSummaryString(*it1));
+            Serial.println(": ");
+            while (it2 != lowLevelFaultRegisters.end()) {
+                Serial.print(getFaultString(*it1, *it2));
+                Serial.print(" Data: ");
+                Serial.print(getFaultData(DEVICE, *it2), BIN);
+                Serial.print("\n");
+                it2++;
+            }
+            it1++;
+        }
+    }
 
 
     /*

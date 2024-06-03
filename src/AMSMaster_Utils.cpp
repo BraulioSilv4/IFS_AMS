@@ -38,6 +38,7 @@ void wakeSequence() {
     sendWakeTone();
     SpiAutoAddress();
     activateCells();
+    ResetAllFaults(DEVICE, FRMWRT_ALL_W);
 }
 
 std::vector<CellVoltage> readCells(int device, int totalBoards) {
@@ -62,6 +63,26 @@ std::vector<CellVoltage> readCells(int device, int totalBoards) {
     return cellData;
 } 
 
+/**
+ * @brief Reads the cell temperatures from the bq79600. The temperature is calculated using Linear Interpolation. 
+ * 
+ * @param cellData vector with struct CellVoltage representing the cell and its voltage
+ * 
+*/
+std::vector<CellTemperature> calculateCellTemperatures(std::vector<CellVoltage> cellData) {
+    std::vector<CellTemperature> tempData;  
+
+    double xValues[33] = {1.30, 1.31, 1.32, 1.33, 1.34, 1.35, 1.37, 1.38, 1.40, 1.43, 1.45, 1.48, 1.51, 1.55, 1.59, 1.63, 1.68, 1.74, 1.80, 1.86, 1.92, 1.99, 2.05, 2.11, 2.17, 2.23, 2.27, 2.32, 2.35, 2.38, 2.40, 2.42, 2.44};
+    double yValues[33] = {120, 115, 110, 105, 100, 95, 90, 85, 80, 75, 70, 65, 60, 55, 50, 45, 40, 35, 30, 25, 20, 15, 10, 5, 0, -5, -10, -15, -20, -25, -30, -35, -40};
+
+    for (auto it = cellData.begin(); it != cellData.end(); it++) {
+        double temp = Interpolation::Linear(xValues, yValues, 33, it->voltage, true);
+        tempData.push_back({it->channel, temp});
+    }
+   
+    return tempData;
+}
+
 // std::vector<DIETemperature> readTemperatures(int device, int totalBoards) {
 //     uint16_t raw_data = 0;
 //     uint16_t temp_response_frame[TEMP_FRAME_SIZE];
@@ -83,17 +104,209 @@ std::vector<CellVoltage> readCells(int device, int totalBoards) {
 //     return tempData;
 // }
 
-std::vector<FAULTS> readFaults(int device, int totalBoards) {
-    uint16_t raw_data = 0;
-    uint16_t fault_response_frame[FAULT_FRAME_SIZE];
+std::vector<FAULTS> processFaults(uint16_t raw_data) {
     std::vector<FAULTS> faultData;
 
-    SpiReadReg(device, FAULT_SUMMARY, fault_response_frame, 1, 0, FRMWRT_STK_R);
+    for (int i = 0; i < 8; i++) {
+        if (raw_data & (1 << i)) {
+            faultData.push_back(static_cast<FAULTS>(i));
+        }
+    }
 
-    
+    return faultData;
+}
+
+int getFaultData(int device, int faultRegister) {
+    uint16_t fault_response_frame[FAULT_FRAME_SIZE];
+    SpiReadReg(device, faultRegister, fault_response_frame, 1, 0, FRMWRT_STK_R);
+    Serial.print("Fault Data: ");
+    Serial.println(fault_response_frame[4], BIN);
+    return fault_response_frame[4];
+}
+
+std::vector<FAULTS> readFaults(int device, int totalBoards, int faultRegister) {    
+    return processFaults(getFaultData(device, faultRegister));
 }
 
 float complement(uint16_t raw_data) {
     return -1*(~raw_data+1);
 }
+
+String getFaultSummaryString(FAULTS fault) {
+    switch(fault) {
+        case FAULT_PWR_:
+            return "FAULT_PWR";
+        case FAULT_SYS_:
+            return "FAULT_SYS";
+        case FAULT_OVUV_:
+            return "FAULT_OVUV";
+        case FAULT_OTUT_:
+            return "FAULT_OTUT";
+        case FAULT_COMM_:
+            return "FAULT_COMM";
+        case FAULT_OTP_:
+            return "FAULT_OTP";
+        case FAULT_COMP_ADC_:
+            return "FAULT_COMP_ADC";
+        case FAULT_PROT_:
+            return "FAULT_PROT";
+        default:
+            return "FAULT_UNKNOWN";    
+    }
+}
+
+String getFaultString(FAULTS highLevelFault, int lowLevelFault) {
+    switch(highLevelFault) {
+        case FAULT_PWR_:
+            switch(lowLevelFault) {
+                case FAULT_PWR1:
+                    return "FAULT_PWR1";
+                case FAULT_PWR2:
+                    return "FAULT_PWR2";
+                case FAULT_PWR3:
+                    return "FAULT_PWR3";
+                default:
+                    return "FAULT_PWR_UNKNOWN";
+            }
+        case FAULT_SYS_:
+            switch (lowLevelFault) {
+                case FAULT_SYS:
+                    return "FAULT_SYS";
+                default:
+                    return "FAULT_SYS_UNKNOWN";
+            }
+        case FAULT_OVUV_:
+            switch(lowLevelFault) {
+                case FAULT_OV1:
+                    return "FAULT_OV1";
+                case FAULT_OV2:
+                    return "FAULT_OV2";
+                case FAULT_UV1:
+                    return "FAULT_UV1";
+                case FAULT_UV2:
+                    return "FAULT_UV2";
+                default:
+                    return "FAULT_OVUV_UNKNOWN";
+            }
+        case FAULT_OTUT_:
+            switch(lowLevelFault) {
+                case FAULT_OT:
+                    return "FAULT_OT";
+                case FAULT_UT:
+                    return "FAULT_UT";
+                default:
+                    return "FAULT_OTUT_UNKNOWN";
+            }
+        case FAULT_COMM_:
+            switch(lowLevelFault) {
+                case FAULT_COMM1:
+                    return "FAULT_COMM1";
+                case FAULT_COMM2:
+                    return "FAULT_COMM2";
+                case FAULT_COMM3:
+                    return "FAULT_COMM3";
+                default:
+                    return "FAULT_COMM_UNKNOWN";
+            }
+        case FAULT_OTP_:
+            switch(lowLevelFault) {
+                case FAULT_OTP:
+                    return "FAULT_OTP";
+                default:
+                    return "FAULT_OTP_UNKNOWN";
+            }
+        case FAULT_COMP_ADC_:
+            switch(lowLevelFault) {
+                case FAULT_COMP_GPIO:
+                    return "FAULT_COMP_GPIO";
+                case FAULT_COMP_VCCB1:
+                    return "FAULT_COMP_VCCB1";
+                case FAULT_COMP_VCCB2:
+                    return "FAULT_COMP_VCCB2";
+                case FAULT_COMP_VCOW1:
+                    return "FAULT_COMP_VCOW1";
+                case FAULT_COMP_VCOW2:
+                    return "FAULT_COMP_VCOW2";
+                case FAULT_COMP_CBOW1:
+                    return "FAULT_COMP_CBOW1";
+                case FAULT_COMP_CBOW2:
+                    return "FAULT_COMP_CBOW2";
+                case FAULT_COMP_CBFET1:
+                    return "FAULT_COMP_CBFET1";
+                case FAULT_COMP_CBFET2:
+                    return "FAULT_COMP_CBFET2";
+                case FAULT_COMP_MISC:
+                    return "FAULT_COMP_MISC";
+                default:
+                    return "FAULT_COMP_ADC_UNKNOWN";
+            }
+        case FAULT_PROT_:
+            switch(lowLevelFault) {
+                case FAULT_PROT1:
+                    return "FAULT_PROT1";
+                case FAULT_PROT2:
+                    return "FAULT_PROT2";
+                default:
+                    return "FAULT_PROT_UNKNOWN";
+            }
+        default:
+            return "FAULT_UNKNOWN";
+    }
+}
+
+std::vector<int> getLowLevelFaultRegisters(FAULTS fault) {
+    std::vector<int> faultRegisters;
+
+    switch(fault) {
+        case FAULT_PWR_:
+            faultRegisters.push_back(FAULT_PWR1);
+            faultRegisters.push_back(FAULT_PWR2);
+            faultRegisters.push_back(FAULT_PWR3);
+            break;
+        case FAULT_SYS_:
+            faultRegisters.push_back(FAULT_SYS);
+            break;
+        case FAULT_OVUV_:
+            faultRegisters.push_back(FAULT_OV1);
+            faultRegisters.push_back(FAULT_OV2);
+            faultRegisters.push_back(FAULT_UV1);
+            faultRegisters.push_back(FAULT_UV2);
+            break;
+        case FAULT_OTUT_:
+            faultRegisters.push_back(FAULT_OT);
+            faultRegisters.push_back(FAULT_UT);
+            break;
+        case FAULT_COMM_:
+            faultRegisters.push_back(FAULT_COMM1);
+            faultRegisters.push_back(FAULT_COMM2);
+            faultRegisters.push_back(FAULT_COMM3);
+            break;
+        case FAULT_OTP_:
+            faultRegisters.push_back(FAULT_OTP);
+            break;
+        case FAULT_COMP_ADC_:
+            faultRegisters.push_back(FAULT_COMP_GPIO);
+            faultRegisters.push_back(FAULT_COMP_VCCB1);
+            faultRegisters.push_back(FAULT_COMP_VCCB2);
+            faultRegisters.push_back(FAULT_COMP_VCOW1);
+            faultRegisters.push_back(FAULT_COMP_VCOW2);
+            faultRegisters.push_back(FAULT_COMP_CBOW1);
+            faultRegisters.push_back(FAULT_COMP_CBOW2);
+            faultRegisters.push_back(FAULT_COMP_CBFET1);
+            faultRegisters.push_back(FAULT_COMP_CBFET2);
+            faultRegisters.push_back(FAULT_COMP_MISC);
+            break;
+        case FAULT_PROT_:
+            faultRegisters.push_back(FAULT_PROT1);
+            faultRegisters.push_back(FAULT_PROT2);
+            break;
+        default:
+            break;    
+    }
+
+
+    return faultRegisters;
+}
+
+
     
