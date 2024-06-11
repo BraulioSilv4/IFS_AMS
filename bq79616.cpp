@@ -2,62 +2,62 @@
  *  @file bq79616.c
  *
  *  @author Vince Toledo - Texas Instruments Inc.
- *  @date 20-April-2020
- *  @version 1.0
+ *  @date February 2020
+ *  @version 1.2
  *  @note Built with CCS for Hercules Version: 8.1.0.00011
+ *  @note Built for TMS570LS1224 (LAUNCH XL2)
  */
 
 /*****************************************************************************
  **
- **  Copyright (c) 2011-2017 Texas Instruments
+ **  Copyright (c) 2011-2019 Texas Instruments
  **
  ******************************************************************************/
 
-#include <bq79616.h>
-#include <bq79600.h>
-#include "string.h"
-#include "sci.h"
-#include "spi.h"
-#include "rti.h"
-#include "gio.h"
-#include "datatypes.h"
-#include "stdarg.h"
+#include <string.h>
+#include "bq79616.hpp"
+#define DEBUG true
+
+extern bool comm_fault = false;
 
 //GLOBAL VARIABLES (use these to avoid stack overflows by creating too many function variables)
 //avoid creating variables/arrays in functions, or you will run out of stack space quickly
-uint16 response_frame2[(MAXBYTES+6)*TOTALBOARDS]; //response frame to be used by every read
-uint16 fault_frame[39*TOTALBOARDS]; //hold fault frame if faults are printed
+
+//GLOBAL VARIABLES (use these to avoid stack overflows by creating too many function variables)
+//avoid creating variables/arrays in functions, or you will run out of stack space quickly
+uint16_t response_frame2[((16*2)+6)*TOTALBOARDS]; //response frame to be used by every read
+uint16_t fault_frame[39*TOTALBOARDS]; //hold fault frame if faults are printed
 int currentBoard = 0;
 int currentCell = 0;
-BYTE bReturn = 0;
+char bReturn = 0;
 int bRes = 0;
 int count = 10000;
-BYTE bBuf[8];
-uint8 pFrame[64];
+char bBuf[8];
+uint8_t pFrame[64];
 static volatile unsigned int delayval = 0; //for delayms and delayus functions
 extern int UART_RX_RDY;
 extern int RTI_TIMEOUT;
 int topFoundBoard = 0;
 int baseCommunicating = 0;
 int otpPass = 0;
-BYTE* currCRC;
+char * currCRC;
 int crc_i = 0;
-uint16 wCRC2 = 0xFFFF;
+uint16_t wCRC2 = 0xFFFF;
 int crc16_i = 0;
 
-uint16 autoaddr_response_frame[(1+6)*TOTALBOARDS]; //response frame for auto-addressing sequence
+uint16_t autoaddr_response_frame[(1+6)*TOTALBOARDS]; //response frame for auto-addressing sequence
 int numReads = 0;
 int channel = 0;
 
 //SpiWriteFrame
-uint16 spiBuf[8];
-uint16 spiFrame[64];
+uint16_t spiBuf[8];
+uint16_t spiFrame[64];
 int spiPktLen = 0;
-uint16 * spiPBuf = spiFrame;
-uint16 spiWCRC;
+uint16_t * spiPBuf = spiFrame;
+uint16_t spiWCRC;
 
 //SpiReadReg
-uint16 spiReturn = 0;
+uint16_t spiReturn = 0;
 int M = 0; //expected total response bytes
 int i = 0; //number of groups of 128 bytes
 int K = 0; //number of bytes remaining in the last group of 128
@@ -66,45 +66,44 @@ int K = 0; //number of bytes remaining in the last group of 128
 //PINGS
 //******
 void SpiWake79600(void) {
-    spiREG3->PC0 &= ~(uint32)((uint32)(1U << 10U | 1U << 1U)); // disable MOSI and nCS - now GPIO
-    gioToggleBit(spiPORT3,1U);
-    delayus(0.5);
-    gioSetBit(spiPORT3,10U,0);
-    delayus(2750); // WAKE ping = 2.5ms to 3ms
-    gioSetBit(spiPORT3,10U,1);
-    delayus(0.5);
-    gioToggleBit(spiPORT3,1U);
-    spiREG3->PC0 |= (uint32)((uint32)(1U << 10U | 1U << 1U)); // re-enable MOSI and nCS - now SPI
-}
-void SpiSD79600(void) {
-    spiREG3->PC0 &= ~(uint32)((uint32)(1U << 10U | 1U << 1U)); // disable MOSI and nCS - now GPIO
-    gioToggleBit(spiPORT3,1U);
-    delayus(0.5);
-    gioSetBit(spiPORT3,10U,0);
-    delayms(13); // Shutdown ping = >12.5ms
-    gioSetBit(spiPORT3,10U,1);
-    delayus(0.5);
-    gioToggleBit(spiPORT3,1U);
-    spiREG3->PC0 |= (uint32)((uint32)(1U << 10U | 1U << 1U)); // re-enable MOSI and nCS - now SPI
-}
-void SpiStA79600(void) {
-    spiREG3->PC0 &= ~(uint32)((uint32)(1U << 10U | 1U << 1U)); // disable MOSI and nCS - now GPIO
-    gioToggleBit(spiPORT3,1U);
-    delayus(0.5);
-    gioSetBit(spiPORT3,10U,0);
-    delayus(275); // Sleep to Active ping = 250us to 300us
-    gioSetBit(spiPORT3,10U,1);
-    delayus(0.5);
-    gioToggleBit(spiPORT3,1U);
-    spiREG3->PC0 |= (uint32)((uint32)(1U << 10U | 1U << 1U)); // re-enable MOSI and nCS - now SPI
+    // pull the nCS line low, wait 2 µs
+    digitalWrite(nCS, LOW);
+    delayMicroseconds(2);
+    
+    // pull the MOSI/RX line low for a duration of 2.75 ms and pull it back high
+    digitalWrite(MOSI, LOW);
+    delayMicroseconds(2750); 
+    digitalWrite(MOSI, HIGH);
+
+    // wait 2 µs, and finally pull nCS pin high again
+    delayMicroseconds(2);
+    digitalWrite(nCS, HIGH);
 }
 
-void SpiCommClear79600(void) {
-    spiTransmitData(spiREG3,&dataconfig1_t,1,0x00);
+void ResetAllFaults(char bID, char bWriteType)
+{
+    if(bWriteType==FRMWRT_ALL_W)
+    {
+        SpiReadReg(0, CUST_CRC_RSLT_HI, fault_frame, 2, 0, FRMWRT_ALL_R);
+        for(currentBoard=0; currentBoard<TOTALBOARDS; currentBoard++)
+        {
+            SpiWriteReg(TOTALBOARDS-currentBoard-1, CUST_CRC_HI, fault_frame[currentBoard*8+4] << 8 | fault_frame[currentBoard*8+5], 2, FRMWRT_SGL_W);
+        }
+        SpiWriteReg(0, FAULT_RST1, 0xFFFF, 2, FRMWRT_ALL_W);
+    }
+    else if(bWriteType==FRMWRT_SGL_W)
+    {
+        SpiWriteReg(bID, FAULT_RST1, 0xFFFF, 2, FRMWRT_SGL_W);
+    }
+    else if(bWriteType==FRMWRT_STK_W)
+    {
+        SpiWriteReg(0, FAULT_RST1, 0xFFFF, 2, FRMWRT_STK_W);
+    }
+    else
+    {
+        Serial.println("ERROR: ResetAllFaults bWriteType incorrect\n");
+    }
 }
-//**********
-//END PINGS
-//**********
 
 //**********************
 //AUTO ADDRESS SEQUENCE
@@ -146,11 +145,13 @@ void SpiAutoAddress()
     SpiReadReg(0, OTP_ECC_DATAIN7, autoaddr_response_frame, 1, 0, FRMWRT_STK_R);
     SpiReadReg(0, OTP_ECC_DATAIN8, autoaddr_response_frame, 1, 0, FRMWRT_STK_R);
 
+    //Serial.println("Synchronize the dll");
     //OPTIONAL: read back all device addresses
     for(currentBoard=0; currentBoard<TOTALBOARDS; currentBoard++)
     {
         SpiReadReg(currentBoard, DIR0_ADDR, autoaddr_response_frame, 1, 0, FRMWRT_SGL_R);
     }
+    //Serial.println("read back all devices address ^");
 
     //OPTIONAL: read register address 0x2001 and verify that the value is 0x14
     SpiReadReg(0, 0x2001, autoaddr_response_frame, 1, 0, FRMWRT_SGL_R);
@@ -158,19 +159,17 @@ void SpiAutoAddress()
    return;
 }
 
-//**************************
-//END AUTO ADDRESS SEQUENCE
-//**************************
-
-
 //************************
 //WRITE AND READ FUNCTIONS
 //************************
-int SpiWriteReg(BYTE bID, uint16 wAddr, uint64 dwData, BYTE bLen, BYTE bWriteType) {
+
+//FORMAT WRITE DATA, SEND TO
+//BE COMBINED WITH REST OF FRAME
+int SpiWriteReg(char bID, uint16_t wAddr, uint64_t dwData, char bLen, char bWriteType) {
     // device address, register start address, data bytes, data length, write type (single, broadcast, stack)
     bRes = 0;
     memset(spiBuf,0,sizeof(spiBuf));
-    while(gioGetBit(gioPORTA, 1) == 0) delayus(5); //wait until SPI_RDY is ready
+    while(!isSPIReady()) delayMicroseconds(5); //wait until SPI_RDY is ready
     switch (bLen) {
     case 1:
         spiBuf[0] = dwData & 0x00000000000000FF;
@@ -238,9 +237,7 @@ int SpiWriteReg(BYTE bID, uint16 wAddr, uint64 dwData, BYTE bLen, BYTE bWriteTyp
     return bRes;
 }
 
-
-
-int SpiWriteFrame(uint16 bID, uint16 wAddr, uint16 * pData, uint16 bLen, uint8 bWriteType) {
+int SpiWriteFrame(uint16_t bID, uint16_t wAddr, uint16_t * pData, uint16_t bLen, uint8_t bWriteType) {
     spiPktLen = 0;
     spiPBuf = spiFrame;
     memset(spiFrame, 0x7F, sizeof(spiFrame));
@@ -253,7 +250,7 @@ int SpiWriteFrame(uint16 bID, uint16 wAddr, uint16 * pData, uint16 bLen, uint8 b
     *spiPBuf++ = wAddr & 0x00FF;
 
     while (bLen--)
-        *spiPBuf++ = *pData++;
+        *spiPBuf++ = *pData++; 
 
     spiPktLen = spiPBuf - spiFrame;
 
@@ -262,26 +259,34 @@ int SpiWriteFrame(uint16 bID, uint16 wAddr, uint16 * pData, uint16 bLen, uint8 b
     *spiPBuf++ = (spiWCRC & 0xFF00) >> 8;
     spiPktLen += 2;
 
-    spiTransmitData(spiREG3,&dataconfig1_t,spiPktLen,spiFrame);
+    
+    
+
+    SpiExchange(spiFrame, spiPktLen);
+    delay(1);
 
     return spiPktLen;
 }
 
 //GENERATE READ COMMAND FRAME AND THEN WAIT FOR RESPONSE DATA (INTERRUPT MODE FOR SCIRX)
-int SpiReadReg(BYTE bID, uint16 wAddr, uint16 * pData, BYTE bLen, uint32 dwTimeOut, BYTE bWriteType) {
+int SpiReadReg(char bID, uint16_t wAddr, uint16_t * pData, char bLen, uint32_t dwTimeOut, char bWriteType) {
     // device address, register start address, byte frame pointer to store data, data length, read type (single, broadcast, stack)
 
     bRes = 0; //total bytes received
 
-    while(gioGetBit(gioPORTA, 1) == 0) delayus(1); //wait until SPI_RDY is ready
-
+    //Serial.println(isSPIReady());
+    while(!isSPIReady()) {
+        delayMicroseconds(1); //wait until SPI_RDY is ready
+    }
     //send the read request to the 600
     spiReturn = bLen - 1;
     SpiWriteFrame(bID, wAddr, &spiReturn, 1, bWriteType); //send the read request command frame
-    delayus(5*TOTALBOARDS); //wait propagation time for each board
+    delayMicroseconds(5*TOTALBOARDS); //wait propagation time for each board
 
-    uint16 * movingPointer = pData;
+    //Serial.println(isSPIReady());
 
+    uint16_t * movingPointer = pData;
+    
     //prepare the correct number of bytes for the device to read
     if (bWriteType == FRMWRT_SGL_R)
     {
@@ -304,26 +309,39 @@ int SpiReadReg(BYTE bID, uint16 wAddr, uint16 * pData, BYTE bLen, uint32 dwTimeO
     i = (int)(M/128);
     //prepare the remainder that is left over after the last full 128-byte read
     K = M - i*128;
-
+    
     //loop until we've read all data bytes
     while(i>(-1))
     {
-        while(gioGetBit(gioPORTA, 1) == 0) delayus(100); //wait until SPI_RDY is ready
-
+        while(!isSPIReady()) {
+            delayMicroseconds(100);
+        }  //wait until SPI_RDY is ready
         //if there is more than 128 bytes remaining
         if(i>0)
         {
             if (bWriteType == FRMWRT_SGL_R)
             {
-                spiTransmitAndReceiveData(spiREG3, &dataconfig1_t, 128, FFBuffer, movingPointer);
+                digitalWrite(nCS, LOW);
+                for(int i = 0; i < K; i++){
+                    pData[i] = SPI.transfer(0xFF);
+                }
+                digitalWrite(nCS, HIGH);
             }
             else if (bWriteType == FRMWRT_STK_R)
             {
-                spiTransmitAndReceiveData(spiREG3, &dataconfig1_t, 128, FFBuffer, movingPointer);
+                digitalWrite(nCS, LOW);
+                for(int i = 0; i < K; i++){
+                    pData[i] = SPI.transfer(0xFF);
+                }
+                digitalWrite(nCS, HIGH);
             }
             else if (bWriteType == FRMWRT_ALL_R)
             {
-                spiTransmitAndReceiveData(spiREG3, &dataconfig1_t, 128, FFBuffer, movingPointer);
+                digitalWrite(nCS, LOW);
+                for(int i = 0; i < K; i++){
+                    pData[i] = SPI.transfer(0xFF);
+                }
+                digitalWrite(nCS, HIGH);
             }
             movingPointer+=128;
         }
@@ -333,17 +351,29 @@ int SpiReadReg(BYTE bID, uint16 wAddr, uint16 * pData, BYTE bLen, uint32 dwTimeO
         {
             if (bWriteType == FRMWRT_SGL_R)
             {
-                spiTransmitAndReceiveData(spiREG3, &dataconfig1_t, K, FFBuffer, movingPointer);
+                digitalWrite(nCS, LOW);
+                for(int i = 0; i < K; i++){
+                    pData[i] = SPI.transfer(0xFF);
+                }
+                digitalWrite(nCS, HIGH);
                 bRes = bLen + 6;
             }
             else if (bWriteType == FRMWRT_STK_R)
             {
-                spiTransmitAndReceiveData(spiREG3, &dataconfig1_t, K, FFBuffer, movingPointer);
+                digitalWrite(nCS, LOW);
+                for(int i = 0; i < K; i++){
+                    pData[i] = SPI.transfer(0xFF);
+                }
+                digitalWrite(nCS, HIGH);
                 bRes = (bLen + 6) * (TOTALBOARDS - 1);
             }
             else if (bWriteType == FRMWRT_ALL_R)
             {
-                spiTransmitAndReceiveData(spiREG3, &dataconfig1_t, K, FFBuffer, movingPointer);
+                digitalWrite(nCS, LOW);
+                for(int i = 0; i < K; i++){
+                    pData[i] = SPI.transfer(0xFF);
+                }
+                digitalWrite(nCS, HIGH);
                 bRes = (bLen + 6) * TOTALBOARDS;
             }
         }
@@ -354,9 +384,23 @@ int SpiReadReg(BYTE bID, uint16 wAddr, uint16 * pData, BYTE bLen, uint32 dwTimeO
     return bRes;
 }
 
+int isSPIReady() {
+    return digitalRead(3);
+}
+
+void SpiExchange(uint16_t *data, int len) {
+    digitalWrite(nCS, LOW);
+    for (int i = 0; i < len; i++) {
+        SPI.transfer(data[i]);
+    }
+    digitalWrite(nCS, HIGH);
+}
+
+
+
 // CRC16 TABLE
 // ITU_T polynomial: x^16 + x^15 + x^2 + 1
-const uint16 crc16_table[256] = { 0x0000, 0xC0C1, 0xC181, 0x0140, 0xC301,
+const uint16_t crc16_table[256] = { 0x0000, 0xC0C1, 0xC181, 0x0140, 0xC301,
 		0x03C0, 0x0280, 0xC241, 0xC601, 0x06C0, 0x0780, 0xC741, 0x0500, 0xC5C1,
 		0xC481, 0x0440, 0xCC01, 0x0CC0, 0x0D80, 0xCD41, 0x0F00, 0xCFC1, 0xCE81,
 		0x0E40, 0x0A00, 0xCAC1, 0xCB81, 0x0B40, 0xC901, 0x09C0, 0x0880, 0xC841,
@@ -386,130 +430,29 @@ const uint16 crc16_table[256] = { 0x0000, 0xC0C1, 0xC181, 0x0140, 0xC301,
 		0x8C41, 0x4400, 0x84C1, 0x8581, 0x4540, 0x8701, 0x47C0, 0x4680, 0x8641,
 		0x8201, 0x42C0, 0x4380, 0x8341, 0x4100, 0x81C1, 0x8081, 0x4040 };
 
-uint32 SpiCRC16(uint16 *pBuf, int nLen)
+uint32_t SpiCRC16(uint16_t *pBuf, int nLen)
 {
-    uint32 wCRC = 0xFFFF;
+    uint32_t wCRC = 0xFFFF;
     int i;
 
     for (i = 0; i < nLen; i++) {
-        wCRC ^= (uint16)(*pBuf++) & 0x00FF;
+        wCRC ^= (uint16_t)(*pBuf++) & 0x00FF;
         wCRC = crc16_table[wCRC & 0x00FF] ^ (wCRC >> 8);
     }
 
     return wCRC;
 }
-//****************************
-//END WRITE AND READ FUNCTIONS
-//****************************
 
-//************************
-//MISCELLANEOUS FUNCTIONS
-//************************
-void SpiDisableTimeout_600_616(void)
-{
-    //Disable timeout 600
-    SpiWriteReg(0, 0x2005, 0x00, 1, FRMWRT_SGL_W);
-    //Disable timeout 616
-    SpiWriteReg(0, COMM_CTRL, 0x00, 1, FRMWRT_STK_W);
-}
+uint16_t CRC16(char *pBuf, int nLen) {
+    uint16_t wCRC = 0xFFFF;
+    int i;
 
-float Complement(uint16 rawData, float multiplier)
-{
-    return -1*(~rawData+1)*multiplier;
-}
-
-BOOL GetFaultStat() {
-
-    if (!gioGetBit(gioPORTA, 0))
-        return 0;
-    return 1;
-}
-
-void delayus(uint16 us) {
-    if (us == 0)
-       return;
-    else
-    {
-        //CHANGE THE INTERRUPT COMPARE VALUES (PERIOD OF INTERRUPT)
-        //Setup compare 0 value.
-        rtiREG1->CMP[0U].COMPx = 10*us; //10 ticks of clock per microsecond, so multiply by 10
-        //Setup update compare 0 value.
-        rtiREG1->CMP[0U].UDCPx = 10*us;
-
-        //ENABLE THE NOTIFICATION FOR THE PERIOD WE SET
-        rtiEnableNotification(rtiNOTIFICATION_COMPARE0);
-
-        //START THE COUNTER
-        rtiStartCounter(rtiCOUNTER_BLOCK0);
-
-        //WAIT IN LOOP UNTIL THE INTERRUPT HAPPENS (HAPPENS AFTER THE PERIOD WE SET)
-        //WHEN INTERRUPT HAPPENS, RTI_NOTIFICATION GETS SET TO 1 IN THAT INTERRUPT
-        //GO TO notification.c -> rtiNotification() to see where RTI_TIMEOUT is set to 1
-        while(RTI_TIMEOUT==0);
-
-        //RESET THE VARIABLE TO 0, FOR THE NEXT TIME WE DO A DELAY
-        RTI_TIMEOUT = 0;
-
-        //DISABLE THE INTERRUPT NOTIFICATION
-        rtiDisableNotification(rtiNOTIFICATION_COMPARE0);
-
-        //STOP THE COUNTER
-        rtiStopCounter(rtiCOUNTER_BLOCK0);
-
-        //RESET COUNTER FOR THE NEXT TIME WE DO A DELAY
-        rtiResetCounter(rtiCOUNTER_BLOCK0);
+    Serial.print("\nCRCOUT = ");
+    for (i = 0; i < nLen; i++) {
+        //Serial.println(pBuf[i], HEX);
+        wCRC ^= (*pBuf++) & 0x00FF;
+        wCRC = crc16_table[wCRC & 0x00FF] ^ (wCRC >> 8);
     }
+
+    return wCRC;
 }
-
-void delayms(uint16 ms) {
-    if (ms == 0)
-       return;
-    else
-    {
-        rtiREG1->CMP[0U].COMPx = 10000*ms;
-        rtiREG1->CMP[0U].UDCPx = 10000*ms;
-        rtiEnableNotification(rtiNOTIFICATION_COMPARE0);
-        rtiStartCounter(rtiCOUNTER_BLOCK0);
-        while(RTI_TIMEOUT==0);
-        RTI_TIMEOUT = 0;
-        rtiDisableNotification(rtiNOTIFICATION_COMPARE0);
-        rtiStopCounter(rtiCOUNTER_BLOCK0);
-        rtiResetCounter(rtiCOUNTER_BLOCK0);
-    }
-}
-
-uint16_t volt2Byte(float volt)
-{
-    return (uint16_t)~((int16_t)((-volt/0.00019073)-1.0));
-}
-
-unsigned printConsole(const char *_format, ...)
-{
-   char str[128];
-   int length = -1, k = 0;
-
-   va_list argList;
-   va_start( argList, _format );
-
-   length = vsnprintf(str, sizeof(str), _format, argList);
-
-   va_end( argList );
-
-//   if (length > 0)
-//   {
-//      for(k=0; k<length; k++)
-//      {
-//          HetUART1PutChar(str[k]);
-//      }
-//   }
-   sciSend(scilinREG, length, str);
-
-   return (unsigned)length;
-}
-
-//***************************
-//END MISCELLANEOUS FUNCTIONS
-//***************************
-
-//EOF
-
