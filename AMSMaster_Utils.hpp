@@ -9,7 +9,7 @@
 #define DEVICE                  0
 #define TOTALFAULT_BIT          8
 
-#define lenght(array) (sizeof(array) / sizeof(array[0]))
+#define length(array) (sizeof(array) / sizeof(array[0]))
 
 struct CellVoltage {
     int channel;

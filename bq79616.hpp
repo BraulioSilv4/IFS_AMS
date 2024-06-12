@@ -40,7 +40,7 @@
 #define BRIDGEDEVICE 0   //
 #define MAXcharS (16*2)     //maximum number of chars to be read from the devices (for array creation)
 #define BAUDRATE 1000000    //device + uC baudrate
-#define nCS 77               //chip select pin
+#define nCS 77             //chip select pin
 #define SPI_RDY 43           //SPI ready pin
 #define nFAULT 46            //fault pin
 #define MOSI 75            //SPI MOSI pin

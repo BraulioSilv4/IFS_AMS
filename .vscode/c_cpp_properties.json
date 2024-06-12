@@ -3,7 +3,7 @@
     "configurations": [
         {
             "name": "Arduino",
-            "compilerPath": "C:\\Users\\mineb\\AppData\\Local\\Arduino15\\packages\\arduino\\tools\\arm-none-eabi-gcc\\4.8.3-2014q1\\bin\\arm-none-eabi-g++",
+            "compilerPath": "C:\\Users\\guilh\\AppData\\Local\\Arduino15\\packages\\arduino\\tools\\arm-none-eabi-gcc\\4.8.3-2014q1\\bin\\arm-none-eabi-g++",
             "compilerArgs": [
                 "-w",
                 "-std=gnu++11",
@@ -17,22 +17,22 @@
             ],
             "intelliSenseMode": "gcc-x64",
             "includePath": [
-                "C:\\Users\\mineb\\AppData\\Local\\Arduino15\\packages\\arduino\\hardware\\sam\\1.6.12\\system\\libsam",
-                "C:\\Users\\mineb\\AppData\\Local\\Arduino15\\packages\\arduino\\hardware\\sam\\1.6.12\\system\\CMSIS\\CMSIS\\Include\\",
-                "C:\\Users\\mineb\\AppData\\Local\\Arduino15\\packages\\arduino\\hardware\\sam\\1.6.12\\system\\CMSIS\\Device\\ATMEL\\",
-                "C:\\Users\\mineb\\AppData\\Local\\Arduino15\\packages\\arduino\\hardware\\sam\\1.6.12\\cores\\arduino",
-                "C:\\Users\\mineb\\AppData\\Local\\Arduino15\\packages\\arduino\\hardware\\sam\\1.6.12\\variants\\arduino_due_x",
-                "C:\\Users\\mineb\\OneDrive\\documents\\Arduino\\libraries\\InterpolationLib\\src",
-                "C:\\Users\\mineb\\AppData\\Local\\Arduino15\\packages\\arduino\\hardware\\sam\\1.6.12\\libraries\\SPI\\src",
-                "c:\\users\\mineb\\appdata\\local\\arduino15\\packages\\arduino\\tools\\arm-none-eabi-gcc\\4.8.3-2014q1\\arm-none-eabi\\include\\c++\\4.8.3",
-                "c:\\users\\mineb\\appdata\\local\\arduino15\\packages\\arduino\\tools\\arm-none-eabi-gcc\\4.8.3-2014q1\\arm-none-eabi\\include\\c++\\4.8.3\\arm-none-eabi",
-                "c:\\users\\mineb\\appdata\\local\\arduino15\\packages\\arduino\\tools\\arm-none-eabi-gcc\\4.8.3-2014q1\\arm-none-eabi\\include\\c++\\4.8.3\\backward",
-                "c:\\users\\mineb\\appdata\\local\\arduino15\\packages\\arduino\\tools\\arm-none-eabi-gcc\\4.8.3-2014q1\\lib\\gcc\\arm-none-eabi\\4.8.3\\include",
-                "c:\\users\\mineb\\appdata\\local\\arduino15\\packages\\arduino\\tools\\arm-none-eabi-gcc\\4.8.3-2014q1\\lib\\gcc\\arm-none-eabi\\4.8.3\\include-fixed",
-                "c:\\users\\mineb\\appdata\\local\\arduino15\\packages\\arduino\\tools\\arm-none-eabi-gcc\\4.8.3-2014q1\\arm-none-eabi\\include"
+                "C:\\Users\\guilh\\AppData\\Local\\Arduino15\\packages\\arduino\\hardware\\sam\\1.6.12\\system\\libsam",
+                "C:\\Users\\guilh\\AppData\\Local\\Arduino15\\packages\\arduino\\hardware\\sam\\1.6.12\\system\\CMSIS\\CMSIS\\Include\\",
+                "C:\\Users\\guilh\\AppData\\Local\\Arduino15\\packages\\arduino\\hardware\\sam\\1.6.12\\system\\CMSIS\\Device\\ATMEL\\",
+                "C:\\Users\\guilh\\AppData\\Local\\Arduino15\\packages\\arduino\\hardware\\sam\\1.6.12\\cores\\arduino",
+                "C:\\Users\\guilh\\AppData\\Local\\Arduino15\\packages\\arduino\\hardware\\sam\\1.6.12\\variants\\arduino_due_x",
+                "C:\\Users\\guilh\\OneDrive\\Documents\\Arduino\\libraries\\InterpolationLib\\src",
+                "C:\\Users\\guilh\\AppData\\Local\\Arduino15\\packages\\arduino\\hardware\\sam\\1.6.12\\libraries\\SPI\\src",
+                "c:\\users\\guilh\\appdata\\local\\arduino15\\packages\\arduino\\tools\\arm-none-eabi-gcc\\4.8.3-2014q1\\arm-none-eabi\\include\\c++\\4.8.3",
+                "c:\\users\\guilh\\appdata\\local\\arduino15\\packages\\arduino\\tools\\arm-none-eabi-gcc\\4.8.3-2014q1\\arm-none-eabi\\include\\c++\\4.8.3\\arm-none-eabi",
+                "c:\\users\\guilh\\appdata\\local\\arduino15\\packages\\arduino\\tools\\arm-none-eabi-gcc\\4.8.3-2014q1\\arm-none-eabi\\include\\c++\\4.8.3\\backward",
+                "c:\\users\\guilh\\appdata\\local\\arduino15\\packages\\arduino\\tools\\arm-none-eabi-gcc\\4.8.3-2014q1\\lib\\gcc\\arm-none-eabi\\4.8.3\\include",
+                "c:\\users\\guilh\\appdata\\local\\arduino15\\packages\\arduino\\tools\\arm-none-eabi-gcc\\4.8.3-2014q1\\lib\\gcc\\arm-none-eabi\\4.8.3\\include-fixed",
+                "c:\\users\\guilh\\appdata\\local\\arduino15\\packages\\arduino\\tools\\arm-none-eabi-gcc\\4.8.3-2014q1\\arm-none-eabi\\include"
             ],
             "forcedInclude": [
-                "C:\\Users\\mineb\\AppData\\Local\\Arduino15\\packages\\arduino\\hardware\\sam\\1.6.12\\cores\\arduino\\Arduino.h"
+                "C:\\Users\\guilh\\AppData\\Local\\Arduino15\\packages\\arduino\\hardware\\sam\\1.6.12\\cores\\arduino\\Arduino.h"
             ],
             "cStandard": "c11",
             "cppStandard": "c++11",

@@ -101,7 +101,7 @@ void ResetAllFaults(char bID, char bWriteType)
     }
     else
     {
-        Serial.println("ERROR: ResetAllFaults bWriteType incorrect\n");
+        SerialUSB.println("ERROR: ResetAllFaults bWriteType incorrect\n");
     }
 }
 
@@ -259,9 +259,6 @@ int SpiWriteFrame(uint16_t bID, uint16_t wAddr, uint16_t * pData, uint16_t bLen,
     *spiPBuf++ = (spiWCRC & 0xFF00) >> 8;
     spiPktLen += 2;
 
-    
-    
-
     SpiExchange(spiFrame, spiPktLen);
     delay(1);
 
@@ -385,7 +382,7 @@ int SpiReadReg(char bID, uint16_t wAddr, uint16_t * pData, char bLen, uint32_t d
 }
 
 int isSPIReady() {
-    return digitalRead(3);
+    return digitalRead(SPI_RDY);
 }
 
 void SpiExchange(uint16_t *data, int len) {
@@ -395,7 +392,6 @@ void SpiExchange(uint16_t *data, int len) {
     }
     digitalWrite(nCS, HIGH);
 }
-
 
 
 // CRC16 TABLE
@@ -447,7 +443,7 @@ uint16_t CRC16(char *pBuf, int nLen) {
     uint16_t wCRC = 0xFFFF;
     int i;
 
-    Serial.print("\nCRCOUT = ");
+    SerialUSB.print("\nCRCOUT = ");
     for (i = 0; i < nLen; i++) {
         //Serial.println(pBuf[i], HEX);
         wCRC ^= (*pBuf++) & 0x00FF;

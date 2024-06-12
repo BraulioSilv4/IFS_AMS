@@ -44,7 +44,7 @@ void wakeSequence() {
 CellVoltage * readCells(int device, int totalBoards) {
     uint16_t raw_data = 0;
     uint16_t response_frame[RESPONSE_FRAME_SIZE];
-    CellVoltage * cellData = new CellVoltage[TOTALBOARDS*ACTIVECHANNELS*2]; 
+    CellVoltage cellData[TOTALBOARDS*ACTIVECHANNELS*2]; 
     
     SpiReadReg(device, (VCELL16_HI+(16-ACTIVECHANNELS)*2), response_frame, ACTIVECHANNELS*2, 0, FRMWRT_STK_R);
     
@@ -55,6 +55,7 @@ CellVoltage * readCells(int device, int totalBoards) {
             
             raw_data = (response_frame[channel + boardStart + 4] << 8) | response_frame[channel + boardStart + 5];
             float cell_voltage = raw_data * 0.00019073; 
+            SerialUSB.println(cell_voltage);
  
             cellData[currBoard*ACTIVECHANNELS*2 + channel] = {channel/2 + 1, cell_voltage};
         }
@@ -83,38 +84,16 @@ CellTemperature * calculateCellTemperatures(CellVoltage* cellData) {
     return tempData;
 }
 
-// std::vector<DIETemperature> readTemperatures(int device, int totalBoards) {
-//     uint16_t raw_data = 0;
-//     uint16_t temp_response_frame[TEMP_FRAME_SIZE];
-//     std::vector<DIETemperature> tempData;
-
-//     SpiReadReg(device, DIETEMP2_HI, temp_response_frame, CELL_TEMP_NUM*2, 0, FRMWRT_STK_R);
-
-//     for(int currBoard = 0; currBoard < totalBoards-1; currBoard++) {
-//         for (int die = 0; die < CELL_TEMP_NUM*2; die += 2) {
-//             int boardStart = (CELL_TEMP_NUM*2*+6) * currBoard;
-            
-//             raw_data = (temp_response_frame[die + boardStart + 4] << 8) | temp_response_frame[die + boardStart + 5];
-//             float die_temp = raw_data * 0.00390625;
-
-//             tempData.push_back({die/2 + 1, die_temp});
-//         }
-//     }
-
-//     return tempData;
-// }
-
 int getFaultData(int device, int faultRegister) {
     uint16_t fault_response_frame[FAULT_FRAME_SIZE];
     SpiReadReg(device, faultRegister, fault_response_frame, 1, 0, FRMWRT_STK_R);
-    Serial.print("Fault Data: ");
-    Serial.println(fault_response_frame[4], BIN);
     return fault_response_frame[4];
 }
 
 FAULTS * readFaults(int device, int totalBoards, int faultRegister) { 
     int rawData = getFaultData(device, faultRegister);   
-    FAULTS * faultData;
+    static FAULTS faultData[TOTALFAULT_BIT];
+    memset(faultData, 0, sizeof(faultData));
 
     for (int i = 0; i < TOTALFAULT_BIT; i++) {
         if (rawData & (1 << i)) {
@@ -252,7 +231,8 @@ String getFaultString(FAULTS highLevelFault, int lowLevelFault) {
 }
 
 int * getLowLevelFaultRegisters(FAULTS fault) {
-    int * faultRegisters;
+    static int faultRegisters[10];
+    memset(faultRegisters, 0, sizeof(faultRegisters));
 
     switch(fault) {
         case FAULT_PWR_:
