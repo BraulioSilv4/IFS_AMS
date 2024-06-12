@@ -41,7 +41,7 @@ String getFaultSummaryString(FAULTS fault);
 String getFaultString(FAULTS highLevelFault, int lowLevelFault);
 float complement(uint16_t raw_data);
 void wakeSequence();
-CellVoltage* readCells(int device, int totalBoards);
+void readCells(int device, int totalBoards, CellVoltage cellData[]);
 CellTemperature* calculateCellTemperatures(CellVoltage* cellData);
 FAULTS* readFaults(int device, int totalBoards, int faultRegister = FAULT_SUMMARY);
 int * getLowLevelFaultRegisters(FAULTS fault);

@@ -41,10 +41,9 @@ void wakeSequence() {
     ResetAllFaults(DEVICE, FRMWRT_ALL_W);
 }
 
-CellVoltage * readCells(int device, int totalBoards) {
+void readCells(int device, int totalBoards, CellVoltage cellData[]) {
     uint16_t raw_data = 0;
     uint16_t response_frame[RESPONSE_FRAME_SIZE];
-    CellVoltage cellData[TOTALBOARDS*ACTIVECHANNELS*2]; 
     
     SpiReadReg(device, (VCELL16_HI+(16-ACTIVECHANNELS)*2), response_frame, ACTIVECHANNELS*2, 0, FRMWRT_STK_R);
     
@@ -56,12 +55,12 @@ CellVoltage * readCells(int device, int totalBoards) {
             raw_data = (response_frame[channel + boardStart + 4] << 8) | response_frame[channel + boardStart + 5];
             float cell_voltage = raw_data * 0.00019073; 
             SerialUSB.println(cell_voltage);
- 
-            cellData[currBoard*ACTIVECHANNELS*2 + channel] = {channel/2 + 1, cell_voltage};
+            SerialUSB.println(channel/2 + 1);
+            cellData[currBoard*ACTIVECHANNELS + channel] = {channel/2 + 1, cell_voltage};
         }
     }
 
-    return cellData;
+
 } 
 
 /**

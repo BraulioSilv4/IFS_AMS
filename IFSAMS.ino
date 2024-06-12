@@ -10,17 +10,22 @@ void setup() {
 }
 
 void loop() {
-    CellVoltage * cellData = readCells(DEVICE, TOTALBOARDS);
+    pinMode(48, OUTPUT);
+    digitalWrite(48, HIGH);
+    SerialUSB.println("Bomboclaat");
+    CellVoltage cellData[(TOTALBOARDS-1)*ACTIVECHANNELS];
+    readCells(DEVICE, TOTALBOARDS, cellData);
 
-    SerialUSB.println("\n\nCell Data:");
-    for (int i = 0; i < length(cellData); i++) {
-        SerialUSB.print("Channel: ");
-        SerialUSB.print(cellData[i].channel);
-        SerialUSB.print(" Voltage: ");
-        SerialUSB.print(cellData[i].voltage, 6);
-        SerialUSB.println(" V");
-    }
-
+    // SerialUSB.println("\n\nCell Data:");
+    // for (int i = 0; i < length(cellData); i++) {
+    //     SerialUSB.print("Channel: ");
+    //     SerialUSB.print(cellData[i].channel);
+    //     SerialUSB.print(" Voltage: ");
+    //     SerialUSB.print(cellData[i].voltage, 6);
+    //     SerialUSB.println(" V");
+    // }
+    /*
+    CellTemperature CellTempData[]
     CellTemperature * cellTempData = calculateCellTemperatures(cellData);
 
     SerialUSB.println("\nCell Temp Data:");
@@ -56,4 +61,5 @@ void loop() {
             }
         }
     }
+    */
 }
