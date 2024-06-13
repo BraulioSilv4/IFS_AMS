@@ -5,28 +5,36 @@ uint16_t fault_response_frame[FAULT_FRAME_SIZE];
 
 void setup() {
     SerialUSB.begin(ARDUINO_DUE_BAUDRATE);
-    SerialUSB.println("Starting AMSMaster...");
     wakeSequence();
 }
 
 void loop() {
-    pinMode(48, OUTPUT);
-    digitalWrite(48, HIGH);
-    SerialUSB.println("Bomboclaat");
     CellVoltage cellData[(TOTALBOARDS-1)*ACTIVECHANNELS];
-    readCells(DEVICE, TOTALBOARDS, cellData);
+    readCells(DEVICE, TOTALBOARDS, ACTIVECHANNELS, VCELL16_HI, cellData);
 
-    // SerialUSB.println("\n\nCell Data:");
-    // for (int i = 0; i < length(cellData); i++) {
-    //     SerialUSB.print("Channel: ");
-    //     SerialUSB.print(cellData[i].channel);
-    //     SerialUSB.print(" Voltage: ");
-    //     SerialUSB.print(cellData[i].voltage, 6);
-    //     SerialUSB.println(" V");
-    // }
-    /*
-    CellTemperature CellTempData[]
-    CellTemperature * cellTempData = calculateCellTemperatures(cellData);
+    SerialUSB.println("\n\nCell Data:");
+    for (int i = 0; i < length(cellData); i++) {
+        SerialUSB.print("Channel: ");
+        SerialUSB.print(cellData[i].channel);
+        SerialUSB.print(" Voltage: ");
+        SerialUSB.print(cellData[i].voltage, 6);
+        SerialUSB.println(" V");
+    }
+
+    CellVoltage GPIOdata[(TOTALBOARDS-1)*GPIOCHANNELS];
+    readCells(DEVICE, TOTALBOARDS, GPIOCHANNELS, GPIO8_HI, GPIOdata);
+
+    SerialUSB.println("\n\nGPIO Data:");
+    for (int i = 0; i < length(GPIOdata); i++) {
+        SerialUSB.print("Channel: ");
+        SerialUSB.print(GPIOdata[i].channel);
+        SerialUSB.print(" Voltage: ");
+        SerialUSB.print(GPIOdata[i].voltage, 6);
+        SerialUSB.println(" V");
+    }
+
+    CellTemperature cellTempData[length(GPIOdata)];
+    calculateCellTemperatures(GPIOdata, cellTempData, length(GPIOdata));
 
     SerialUSB.println("\nCell Temp Data:");
     for (int i = 0; i < length(cellTempData); i++) {
@@ -37,6 +45,7 @@ void loop() {
         SerialUSB.println(" C");
     }
 
+/*
     FAULTS * faultData = readFaults(DEVICE, TOTALBOARDS, FAULT_SUMMARY);
     int faultDataSize = length(faultData);
 

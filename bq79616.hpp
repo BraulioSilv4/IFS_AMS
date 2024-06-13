@@ -36,7 +36,8 @@
 // User defines
 #define TOTALBOARDS 2      //boards in stack
 #define CELL_TEMP_NUM 8
-#define ACTIVECHANNELS 16   //channels to activate (incomplete, does not work right now)
+#define ACTIVECHANNELS 16   //channels to activate (incomplete, does not work right now)~
+#define GPIOCHANNELS 8      //channels to read from GPIO
 #define BRIDGEDEVICE 0   //
 #define MAXcharS (16*2)     //maximum number of chars to be read from the devices (for array creation)
 #define BAUDRATE 1000000    //device + uC baudrate

@@ -41,26 +41,24 @@ void wakeSequence() {
     ResetAllFaults(DEVICE, FRMWRT_ALL_W);
 }
 
-void readCells(int device, int totalBoards, CellVoltage cellData[]) {
+void readCells(int device, int totalBoards, int channels, int reg, CellVoltage cellData[]) {
     uint16_t raw_data = 0;
     uint16_t response_frame[RESPONSE_FRAME_SIZE];
     
-    SpiReadReg(device, (VCELL16_HI+(16-ACTIVECHANNELS)*2), response_frame, ACTIVECHANNELS*2, 0, FRMWRT_STK_R);
+    SpiReadReg(device, (reg+(16-channels)*2), response_frame, channels*2, 0, FRMWRT_STK_R);
     
     for(int currBoard = 0; currBoard < totalBoards-1; currBoard++) {
 
-        for (int channel = 0; channel < ACTIVECHANNELS*2; channel += 2) {
-            int boardStart = (ACTIVECHANNELS*2*+6) * currBoard;
+        for (int channel = 0; channel < channels*2; channel += 2) {
+            int boardStart = (channels*2*+6) * currBoard;
             
             raw_data = (response_frame[channel + boardStart + 4] << 8) | response_frame[channel + boardStart + 5];
             float cell_voltage = raw_data * 0.00019073; 
-            SerialUSB.println(cell_voltage);
-            SerialUSB.println(channel/2 + 1);
-            cellData[currBoard*ACTIVECHANNELS + channel] = {channel/2 + 1, cell_voltage};
+            int idx = currBoard*channels + channel/2;
+            cellData[idx].channel = channel/2 + 1;
+            cellData[idx].voltage = cell_voltage;
         }
     }
-
-
 } 
 
 /**
@@ -69,18 +67,14 @@ void readCells(int device, int totalBoards, CellVoltage cellData[]) {
  * @param cellData vector with struct CellVoltage representing the cell and its voltage
  * 
 */
-CellTemperature * calculateCellTemperatures(CellVoltage* cellData) {
-    CellTemperature * tempData;  
-
+void calculateCellTemperatures(CellVoltage cellData[], CellTemperature cellTempData[], int length) {
     double xValues[33] = {1.30, 1.31, 1.32, 1.33, 1.34, 1.35, 1.37, 1.38, 1.40, 1.43, 1.45, 1.48, 1.51, 1.55, 1.59, 1.63, 1.68, 1.74, 1.80, 1.86, 1.92, 1.99, 2.05, 2.11, 2.17, 2.23, 2.27, 2.32, 2.35, 2.38, 2.40, 2.42, 2.44};
     double yValues[33] = {120, 115, 110, 105, 100, 95, 90, 85, 80, 75, 70, 65, 60, 55, 50, 45, 40, 35, 30, 25, 20, 15, 10, 5, 0, -5, -10, -15, -20, -25, -30, -35, -40};
-
-    for (int i = 0; i < sizeof(cellData)/ sizeof(cellData[0]); i++) {
+    for (int i = 0; i < length; i++) {
         double temp = Interpolation::Linear(xValues, yValues, 33, cellData[i].voltage, true);
-        tempData[i] = {cellData[i].channel, temp};
+        cellTempData[i].channel = cellData[i].channel;
+        cellTempData[i].temperature = temp;
     }
-   
-    return tempData;
 }
 
 int getFaultData(int device, int faultRegister) {
