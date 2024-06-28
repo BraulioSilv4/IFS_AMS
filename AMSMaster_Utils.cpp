@@ -11,7 +11,7 @@ void activateCells() {
     // Set the ADC run mode to continuous
     SpiWriteReg(1, ADC_CTRL1, 0x06, 1, FRMWRT_STK_W);
     // Wait the required round robin time
-    delayMicroseconds(192 + (5 * TOTALBOARDS)); 
+    delayMicroseconds(192 + (5 * TOTALBOARDS));
 }
 
 void setPins() {
@@ -21,6 +21,12 @@ void setPins() {
 
     digitalWrite(nCS, HIGH);
     digitalWrite(MOSI, HIGH);
+}
+
+void setRegisters() {
+    SpiWriteReg(DEVICE, OV_THRESH, 0x02, 1, FRMWRT_ALL_W); // Sets Over voltage protection to 4.25V
+    SpiWriteReg(DEVICE, UV_THRESH, 0x00, 1, FRMWRT_ALL_W); // Sets Under voltage protection to 3.0V
+    SpiWriteReg(DEVICE, OVUV_CTRL, 0x05, 1, FRMWRT_ALL_W); // Sets voltage controls
 }
 
 void wakeSequence() {
@@ -37,35 +43,53 @@ void wakeSequence() {
     SPI.begin();
     sendWakeTone();
     SpiAutoAddress();
+    setRegisters();
     activateCells();
     ResetAllFaults(DEVICE, FRMWRT_ALL_W);
+}
+
+CellVoltage readCell(int device, int reg, int channel) {
+    CellVoltage cellData;
+    uint16_t raw_data = 0;
+    uint16_t response_frame[RESPONSE_FRAME_SIZE];
+
+    SpiReadReg(device, reg, response_frame, 2, 0, FRMWRT_SGL_R);
+
+    raw_data = (response_frame[4] << 8) | response_frame[5];
+    float cell_voltage = raw_data * 0.00019073;
+    cellData.channel = channel;
+    cellData.voltage = cell_voltage;
+
+    return cellData;
 }
 
 void readCells(int device, int totalBoards, int channels, int reg, CellVoltage cellData[]) {
     uint16_t raw_data = 0;
     uint16_t response_frame[RESPONSE_FRAME_SIZE];
-    
+
     SpiReadReg(device, (reg+(16-channels)*2), response_frame, channels*2, 0, FRMWRT_STK_R);
-    
+
     for(int currBoard = 0; currBoard < totalBoards-1; currBoard++) {
 
         for (int channel = 0; channel < channels*2; channel += 2) {
             int boardStart = (channels*2*+6) * currBoard;
-            
+
             raw_data = (response_frame[channel + boardStart + 4] << 8) | response_frame[channel + boardStart + 5];
-            float cell_voltage = raw_data * 0.00019073; 
+            float cell_voltage = raw_data * 0.00019073;
             int idx = currBoard*channels + channel/2;
             cellData[idx].channel = channel/2 + 1;
             cellData[idx].voltage = cell_voltage;
         }
     }
-} 
+}
+
+
 
 /**
- * @brief Reads the cell temperatures from the bq79600. The temperature is calculated using Linear Interpolation. 
- * 
+ * @brief Reads the cell temperatures from the bq79600. The temperature is calculated using Linear Interpolation.
+ *
  * @param cellData vector with struct CellVoltage representing the cell and its voltage
- * 
+ *
 */
 void calculateCellTemperatures(CellVoltage cellData[], CellTemperature cellTempData[], int length) {
     double xValues[33] = {1.30, 1.31, 1.32, 1.33, 1.34, 1.35, 1.37, 1.38, 1.40, 1.43, 1.45, 1.48, 1.51, 1.55, 1.59, 1.63, 1.68, 1.74, 1.80, 1.86, 1.92, 1.99, 2.05, 2.11, 2.17, 2.23, 2.27, 2.32, 2.35, 2.38, 2.40, 2.42, 2.44};
@@ -73,210 +97,382 @@ void calculateCellTemperatures(CellVoltage cellData[], CellTemperature cellTempD
     for (int i = 0; i < length; i++) {
         double temp = Interpolation::Linear(xValues, yValues, 33, cellData[i].voltage, true);
         cellTempData[i].channel = cellData[i].channel;
-        cellTempData[i].temperature = temp;
+        cellTempData[i].temperature = static_cast<float>(temp);
     }
 }
 
-int getFaultData(int device, int faultRegister) {
+FAULT_DATA FaultInfo[TOTALFAULT_BIT] = {
+    {FAULT_PWR_, {FAULT_PWR1, FAULT_PWR2, FAULT_PWR3}, 3},
+    {FAULT_SYS_, {FAULT_SYS}, 1},
+    {FAULT_OVUV_, {FAULT_OV1, FAULT_OV2, FAULT_UV1, FAULT_UV2}, 4},
+    {FAULT_OTUT_, {FAULT_OT, FAULT_UT}, 2},
+    {FAULT_COMM_, {FAULT_COMM1, FAULT_COMM2, FAULT_COMM3}, 3},
+    {FAULT_OTP_, {FAULT_OTP}, 1},
+    {FAULT_COMP_ADC_, {FAULT_COMP_GPIO, FAULT_COMP_VCCB1, FAULT_COMP_VCCB2, FAULT_COMP_VCOW1, FAULT_COMP_VCOW2, FAULT_COMP_CBOW1, FAULT_COMP_CBOW2, FAULT_COMP_CBFET1, FAULT_COMP_CBFET2, FAULT_COMP_MISC}, 10},
+    {FAULT_PROT_, {FAULT_PROT1, FAULT_PROT2}, 2}
+};
+
+void readFaultSummary(BOARD_FAULT_SUMMARY boardsFaultSummary[]) {
     uint16_t fault_response_frame[FAULT_FRAME_SIZE];
-    SpiReadReg(device, faultRegister, fault_response_frame, 1, 0, FRMWRT_STK_R);
-    return fault_response_frame[4];
+    SpiReadReg(DEVICE, FAULT_SUMMARY, fault_response_frame, 1, 0, FRMWRT_STK_R);
+
+    for(int currBoard = 0; currBoard < TOTALBOARDS-1; currBoard++) {
+        boardsFaultSummary[currBoard].board = currBoard;
+        boardsFaultSummary[currBoard].faultSummary = static_cast<uint8_t>(fault_response_frame[4+(currBoard*7)]);       
+    }
 }
 
-FAULTS * readFaults(int device, int totalBoards, int faultRegister) { 
-    int rawData = getFaultData(device, faultRegister);   
-    static FAULTS faultData[TOTALFAULT_BIT];
-    memset(faultData, 0, sizeof(faultData));
+void sendTemperatureFaultFrame(int device, int reg, uint16_t fault_response_frame[], int faultType) {
+    SpiReadReg(device, reg, fault_response_frame, 1, 0, FRMWRT_SGL_R);
+    uint16_t t = fault_response_frame[4];
+    if (t != 0) {
+        int baseReg = GPIO8_HI;
+        for (size_t i = 0; i < TOTALFAULT_BIT; i++) {
+            if (t & (1 << i)) {
+                CellVoltage GPIOdata = readCell(device, baseReg + i*2, i);
+                CellTemperature cellTempData[1];
+                calculateCellTemperatures(&GPIOdata, cellTempData, 1);
+                float GPIOtemp = cellTempData[0].temperature;
 
-    for (int i = 0; i < TOTALFAULT_BIT; i++) {
-        if (rawData & (1 << i)) {
-            faultData[i] = static_cast<FAULTS>(i);
+                CAN_FRAME myCANFrame;
+                myCANFrame.id = TEMPERATURE_FAULT_ID;
+                myCANFrame.length = 7;
+                myCANFrame.data.byte[0] = device;
+                myCANFrame.data.byte[1] = i;
+                myCANFrame.data.byte[2] = faultType;
+                myCANFrame.data.byte[3] = static_cast<int>(GPIOtemp) & 0xFF;
+                myCANFrame.data.byte[4] = (static_cast<int>(GPIOtemp) >> 8) & 0xFF;
+                myCANFrame.data.byte[5] = (static_cast<int>(GPIOtemp) >> 16) & 0xFF;;
+                myCANFrame.data.byte[6] = (static_cast<int>(GPIOtemp) >> 24) & 0xFF;
+
+                CAN.sendFrame(myCANFrame);
+            }
         }
     }
+}
 
-    return faultData;
+void sendVoltageFaultFrame(int device, int reg, uint16_t fault_response_frame[], int faultType) {
+    SpiReadReg(device+1, reg, fault_response_frame, 2, 0, FRMWRT_SGL_R);
+    uint16_t ov = fault_response_frame[4] << 8 | fault_response_frame[5];
+    SerialUSB.print("Voltage Fault: ");
+    if (faultType == OVER_VOLTAGE)
+    {
+        SerialUSB.println("Over Voltage");
+    }
+    else if (faultType == UNDER_VOLTAGE)
+    {
+        SerialUSB.println("Under Voltage");
+    }
+    
+    SerialUSB.print(faultType);
+    SerialUSB.println(ov, BIN);
+    if (ov != 0) {
+        SerialUSB.println("Voltage Fault");
+        int baseReg = VCELL16_HI;
+        for (size_t i = 0; i < TOTALFAULT_BIT*2; i++) {
+            if (ov & (1 << i)) {
+                CellVoltage cellData = readCell(device, baseReg + i*2, i);
+                CAN_FRAME myCANFrame;
+                myCANFrame.id = VOLTAGE_FAULT_ID;
+                myCANFrame.length = 7;
+                myCANFrame.data.byte[0] = device;
+                myCANFrame.data.byte[1] = i;
+                myCANFrame.data.byte[2] = faultType;
+                myCANFrame.data.byte[3] = static_cast<int>(cellData.voltage) & 0xFF;
+                myCANFrame.data.byte[4] = (static_cast<int>(cellData.voltage) >> 8) & 0xFF;
+                myCANFrame.data.byte[5] = (static_cast<int>(cellData.voltage) >> 16) & 0xFF;
+                myCANFrame.data.byte[6] = (static_cast<int>(cellData.voltage) >> 24) & 0xFF;
+
+                CAN.sendFrame(myCANFrame);
+            }
+        }
+    }
+}
+
+void sendFaultFrame(int device, FAULT fault, uint16_t fault_response_frame[]) {
+    for (size_t i = 0; i < FaultInfo[fault].size; i++) {
+        int reg = FaultInfo[fault].lowLevelFaults[i];
+        SpiReadReg(device, reg, fault_response_frame, 1, 0, FRMWRT_SGL_R);
+        uint16_t t = fault_response_frame[4];
+        if (t != 0) {
+            CAN_FRAME myCANFrame;
+            myCANFrame.id = FAULT_ID;
+            myCANFrame.length = 4;
+            myCANFrame.data.byte[0] = device;
+            myCANFrame.data.byte[1] = fault;
+            myCANFrame.data.byte[2] = i;
+            myCANFrame.data.byte[3] = t;
+            CAN.sendFrame(myCANFrame);
+        }
+    }
+}
+
+
+void sendFaultFrames(BOARD_FAULT_SUMMARY boardsFaultSummary[]) {
+    uint16_t fault_response_frame[FAULT_FRAME_SIZE];
+    for(size_t currBoard = 0; currBoard < TOTALBOARDS-1; currBoard++) {
+        uint8_t faultSummary = boardsFaultSummary[currBoard].faultSummary;
+        if (faultSummary != 0) {
+            for (size_t i = 0; i < TOTALFAULT_BIT; i++){
+                if (faultSummary & (1 << i)) {
+                    FAULT fault = static_cast<FAULT>(i);
+                    switch (fault) {
+                        case FAULT_OTUT_:
+                            sendTemperatureFaultFrame(currBoard, FAULT_OT, fault_response_frame, OVER_TEMPERATURE);
+                            sendTemperatureFaultFrame(currBoard, FAULT_UT, fault_response_frame, UNDER_TEMPERATURE);
+                            break;
+                        case FAULT_OVUV_:
+                            SerialUSB.println("Voltage Fault");
+                            sendVoltageFaultFrame(currBoard, FAULT_OV1, fault_response_frame, OVER_VOLTAGE);
+                            sendVoltageFaultFrame(currBoard, FAULT_UV1, fault_response_frame, UNDER_VOLTAGE);
+                            break;   
+                        default:
+                            sendFaultFrame(currBoard, fault, fault_response_frame);
+                            break;
+                    }
+                }
+            }
+        }
+    }
 }
 
 float complement(uint16_t raw_data) {
-    return -1*(~raw_data+1);
-}
-
-String getFaultSummaryString(FAULTS fault) {
-    switch(fault) {
-        case FAULT_PWR_:
-            return "FAULT_PWR";
-        case FAULT_SYS_:
-            return "FAULT_SYS";
-        case FAULT_OVUV_:
-            return "FAULT_OVUV";
-        case FAULT_OTUT_:
-            return "FAULT_OTUT";
-        case FAULT_COMM_:
-            return "FAULT_COMM";
-        case FAULT_OTP_:
-            return "FAULT_OTP";
-        case FAULT_COMP_ADC_:
-            return "FAULT_COMP_ADC";
-        case FAULT_PROT_:
-            return "FAULT_PROT";
-        default:
-            return "FAULT_UNKNOWN";    
-    }
-}
-
-String getFaultString(FAULTS highLevelFault, int lowLevelFault) {
-    switch(highLevelFault) {
-        case FAULT_PWR_:
-            switch(lowLevelFault) {
-                case FAULT_PWR1:
-                    return "FAULT_PWR1";
-                case FAULT_PWR2:
-                    return "FAULT_PWR2";
-                case FAULT_PWR3:
-                    return "FAULT_PWR3";
-                default:
-                    return "FAULT_PWR_UNKNOWN";
-            }
-        case FAULT_SYS_:
-            switch (lowLevelFault) {
-                case FAULT_SYS:
-                    return "FAULT_SYS";
-                default:
-                    return "FAULT_SYS_UNKNOWN";
-            }
-        case FAULT_OVUV_:
-            switch(lowLevelFault) {
-                case FAULT_OV1:
-                    return "FAULT_OV1";
-                case FAULT_OV2:
-                    return "FAULT_OV2";
-                case FAULT_UV1:
-                    return "FAULT_UV1";
-                case FAULT_UV2:
-                    return "FAULT_UV2";
-                default:
-                    return "FAULT_OVUV_UNKNOWN";
-            }
-        case FAULT_OTUT_:
-            switch(lowLevelFault) {
-                case FAULT_OT:
-                    return "FAULT_OT";
-                case FAULT_UT:
-                    return "FAULT_UT";
-                default:
-                    return "FAULT_OTUT_UNKNOWN";
-            }
-        case FAULT_COMM_:
-            switch(lowLevelFault) {
-                case FAULT_COMM1:
-                    return "FAULT_COMM1";
-                case FAULT_COMM2:
-                    return "FAULT_COMM2";
-                case FAULT_COMM3:
-                    return "FAULT_COMM3";
-                default:
-                    return "FAULT_COMM_UNKNOWN";
-            }
-        case FAULT_OTP_:
-            switch(lowLevelFault) {
-                case FAULT_OTP:
-                    return "FAULT_OTP";
-                default:
-                    return "FAULT_OTP_UNKNOWN";
-            }
-        case FAULT_COMP_ADC_:
-            switch(lowLevelFault) {
-                case FAULT_COMP_GPIO:
-                    return "FAULT_COMP_GPIO";
-                case FAULT_COMP_VCCB1:
-                    return "FAULT_COMP_VCCB1";
-                case FAULT_COMP_VCCB2:
-                    return "FAULT_COMP_VCCB2";
-                case FAULT_COMP_VCOW1:
-                    return "FAULT_COMP_VCOW1";
-                case FAULT_COMP_VCOW2:
-                    return "FAULT_COMP_VCOW2";
-                case FAULT_COMP_CBOW1:
-                    return "FAULT_COMP_CBOW1";
-                case FAULT_COMP_CBOW2:
-                    return "FAULT_COMP_CBOW2";
-                case FAULT_COMP_CBFET1:
-                    return "FAULT_COMP_CBFET1";
-                case FAULT_COMP_CBFET2:
-                    return "FAULT_COMP_CBFET2";
-                case FAULT_COMP_MISC:
-                    return "FAULT_COMP_MISC";
-                default:
-                    return "FAULT_COMP_ADC_UNKNOWN";
-            }
-        case FAULT_PROT_:
-            switch(lowLevelFault) {
-                case FAULT_PROT1:
-                    return "FAULT_PROT1";
-                case FAULT_PROT2:
-                    return "FAULT_PROT2";
-                default:
-                    return "FAULT_PROT_UNKNOWN";
-            }
-        default:
-            return "FAULT_UNKNOWN";
-    }
-}
-
-int * getLowLevelFaultRegisters(FAULTS fault) {
-    static int faultRegisters[10];
-    memset(faultRegisters, 0, sizeof(faultRegisters));
-
-    switch(fault) {
-        case FAULT_PWR_:
-            faultRegisters[0] = FAULT_PWR1;
-            faultRegisters[1] = FAULT_PWR2;
-            faultRegisters[2] = FAULT_PWR3;
-            break;
-        case FAULT_SYS_:
-            faultRegisters[0] = FAULT_SYS;
-            break;
-        case FAULT_OVUV_:
-            faultRegisters[0] = FAULT_OV1;
-            faultRegisters[1] = FAULT_OV2;
-            faultRegisters[2] = FAULT_UV1;
-            faultRegisters[3] = FAULT_UV2;
-            break;
-        case FAULT_OTUT_:
-            faultRegisters[0] = FAULT_OT;
-            faultRegisters[1] = FAULT_UT;
-            break;
-        case FAULT_COMM_:
-            faultRegisters[0] = FAULT_COMM1;
-            faultRegisters[1] = FAULT_COMM2;
-            faultRegisters[2] = FAULT_COMM3;
-            break;
-        case FAULT_OTP_:
-            faultRegisters[0] = FAULT_OTP;
-            break;
-        case FAULT_COMP_ADC_:
-            faultRegisters[0] = FAULT_COMP_GPIO;
-            faultRegisters[1] = FAULT_COMP_VCCB1;
-            faultRegisters[2] = FAULT_COMP_VCCB2;
-            faultRegisters[3] = FAULT_COMP_VCOW1;
-            faultRegisters[4] = FAULT_COMP_VCOW2;
-            faultRegisters[5] = FAULT_COMP_CBOW1;
-            faultRegisters[6] = FAULT_COMP_CBOW2;
-            faultRegisters[7] = FAULT_COMP_CBFET1;
-            faultRegisters[8] = FAULT_COMP_CBFET2;
-            faultRegisters[9] = FAULT_COMP_MISC;
-            break;
-        case FAULT_PROT_:
-            faultRegisters[0] = FAULT_PROT1;
-            faultRegisters[1] = FAULT_PROT2;
-            break;
-        default:
-            break;    
-    }
-
-
-    return faultRegisters;
+     return -1*(~raw_data+1);
 }
 
 
-    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// void getFaultData(int device, int totalBoards, int faultRegister, FAULT_DATA faultData[]) {
+//     uint16_t fault_response_frame[FAULT_FRAME_SIZE];
+//     SpiReadReg(device, faultRegister, fault_response_frame, 1, 0, FRMWRT_STK_R);
+
+//     for(int currBoard = 0; currBoard < totalBoards-1; currBoard++) {
+//         uint8_t fault = static_cast<uint8_t>(fault_response_frame[4+(currBoard*7)]);
+//     }
+// }
+
+// void readFaultSummary(int device, int totalBoards, BOARD_FAULT_SUMMARY boardFaultSummary[]) {
+//     FAULT_DATA faultData[TOTALFAULT_BIT];
+//     getFaultData(device, totalBoards, FAULT_SUMMARY, boardFaultSummary);
+//     static FAULTS faultData[TOTALFAULT_BIT];
+//     memset(faultData, 0, sizeof(faultData));
+//     for(int currBoard = 0; currBoard < totalBoards-1; currBoard++) {
+//         uint8_t fault_summary = boardFaultSummary[currBoard].fault_summary;
+//         for(int i = 0; i < TOTALFAULT_BIT; i++) {
+//             if(fault_summary & (1 << i)) {
+//                 faultData[i].fault = static_cast<FAULTS>(i);
+//                 faultData[i].board = currBoard;
+//             }
+//         }
+//     }
+// }
+
+
+// void readFaults( ) {
+
+// }
+
+
+
+// String getFaultSummaryString(FAULTS fault) {
+//     switch(fault) {
+//         case FAULT_PWR_:
+//             return "FAULT_PWR";
+//         case FAULT_SYS_:
+//             return "FAULT_SYS";
+//         case FAULT_OVUV_:
+//             return "FAULT_OVUV";
+//         case FAULT_OTUT_:
+//             return "FAULT_OTUT";
+//         case FAULT_COMM_:
+//             return "FAULT_COMM";
+//         case FAULT_OTP_:
+//             return "FAULT_OTP";
+//         case FAULT_COMP_ADC_:
+//             return "FAULT_COMP_ADC";
+//         case FAULT_PROT_:
+//             return "FAULT_PROT";
+//         default:
+//             return "FAULT_UNKNOWN";
+//     }
+// }
+
+// String getFaultString(FAULTS highLevelFault, int lowLevelFault) {
+//     switch(highLevelFault) {
+//         case FAULT_PWR_:
+//             switch(lowLevelFault) {
+//                 case FAULT_PWR1:
+//                     return "FAULT_PWR1";
+//                 case FAULT_PWR2:
+//                     return "FAULT_PWR2";
+//                 case FAULT_PWR3:
+//                     return "FAULT_PWR3";
+//                 default:
+//                     return "FAULT_PWR_UNKNOWN";
+//             }
+//         case FAULT_SYS_:
+//             switch (lowLevelFault) {
+//                 case FAULT_SYS:
+//                     return "FAULT_SYS";
+//                 default:
+//                     return "FAULT_SYS_UNKNOWN";
+//             }
+//         case FAULT_OVUV_:
+//             switch(lowLevelFault) {
+//                 case FAULT_OV1:
+//                     return "FAULT_OV1";
+//                 case FAULT_OV2:
+//                     return "FAULT_OV2";
+//                 case FAULT_UV1:
+//                     return "FAULT_UV1";
+//                 case FAULT_UV2:
+//                     return "FAULT_UV2";
+//                 default:
+//                     return "FAULT_OVUV_UNKNOWN";
+//             }
+//         case FAULT_OTUT_:
+//             switch(lowLevelFault) {
+//                 case FAULT_OT:
+//                     return "FAULT_OT";
+//                 case FAULT_UT:
+//                     return "FAULT_UT";
+//                 default:
+//                     return "FAULT_OTUT_UNKNOWN";
+//             }
+//         case FAULT_COMM_:
+//             switch(lowLevelFault) {
+//                 case FAULT_COMM1:
+//                     return "FAULT_COMM1";
+//                 case FAULT_COMM2:
+//                     return "FAULT_COMM2";
+//                 case FAULT_COMM3:
+//                     return "FAULT_COMM3";
+//                 default:
+//                     return "FAULT_COMM_UNKNOWN";
+//             }
+//         case FAULT_OTP_:
+//             switch(lowLevelFault) {
+//                 case FAULT_OTP:
+//                     return "FAULT_OTP";
+//                 default:
+//                     return "FAULT_OTP_UNKNOWN";
+//             }
+//         case FAULT_COMP_ADC_:
+//             switch(lowLevelFault) {
+//                 case FAULT_COMP_GPIO:
+//                     return "FAULT_COMP_GPIO";
+//                 case FAULT_COMP_VCCB1:
+//                     return "FAULT_COMP_VCCB1";
+//                 case FAULT_COMP_VCCB2:
+//                     return "FAULT_COMP_VCCB2";
+//                 case FAULT_COMP_VCOW1:
+//                     return "FAULT_COMP_VCOW1";
+//                 case FAULT_COMP_VCOW2:
+//                     return "FAULT_COMP_VCOW2";
+//                 case FAULT_COMP_CBOW1:
+//                     return "FAULT_COMP_CBOW1";
+//                 case FAULT_COMP_CBOW2:
+//                     return "FAULT_COMP_CBOW2";
+//                 case FAULT_COMP_CBFET1:
+//                     return "FAULT_COMP_CBFET1";
+//                 case FAULT_COMP_CBFET2:
+//                     return "FAULT_COMP_CBFET2";
+//                 case FAULT_COMP_MISC:
+//                     return "FAULT_COMP_MISC";
+//                 default:
+//                     return "FAULT_COMP_ADC_UNKNOWN";
+//             }
+//         case FAULT_PROT_:
+//             switch(lowLevelFault) {
+//                 case FAULT_PROT1:
+//                     return "FAULT_PROT1";
+//                 case FAULT_PROT2:
+//                     return "FAULT_PROT2";
+//                 default:
+//                     return "FAULT_PROT_UNKNOWN";
+//             }
+//         default:
+//             return "FAULT_UNKNOWN";
+//     }
+// }
+
+// int * getLowLevelFaultRegisters(FAULTS fault) {
+//     static int faultRegisters[10];
+//     memset(faultRegisters, 0, sizeof(faultRegisters));
+
+//     switch(fault) {
+//         case FAULT_PWR_:
+//             faultRegisters[0] = FAULT_PWR1;
+//             faultRegisters[1] = FAULT_PWR2;
+//             faultRegisters[2] = FAULT_PWR3;
+//             break;
+//         case FAULT_SYS_:
+//             faultRegisters[0] = FAULT_SYS;
+//             break;
+//         case FAULT_OVUV_:
+//             faultRegisters[0] = FAULT_OV1;
+//             faultRegisters[1] = FAULT_OV2;
+//             faultRegisters[2] = FAULT_UV1;
+//             faultRegisters[3] = FAULT_UV2;
+//             break;
+//         case FAULT_OTUT_:
+//             faultRegisters[0] = FAULT_OT;
+//             faultRegisters[1] = FAULT_UT;
+//             break;
+//         case FAULT_COMM_:
+//             faultRegisters[0] = FAULT_COMM1;
+//             faultRegisters[1] = FAULT_COMM2;
+//             faultRegisters[2] = FAULT_COMM3;
+//             break;
+//         case FAULT_OTP_:
+//             faultRegisters[0] = FAULT_OTP;
+//             break;
+//         case FAULT_COMP_ADC_:
+//             faultRegisters[0] = FAULT_COMP_GPIO;
+//             faultRegisters[1] = FAULT_COMP_VCCB1;
+//             faultRegisters[2] = FAULT_COMP_VCCB2;
+//             faultRegisters[3] = FAULT_COMP_VCOW1;
+//             faultRegisters[4] = FAULT_COMP_VCOW2;
+//             faultRegisters[5] = FAULT_COMP_CBOW1;
+//             faultRegisters[6] = FAULT_COMP_CBOW2;
+//             faultRegisters[7] = FAULT_COMP_CBFET1;
+//             faultRegisters[8] = FAULT_COMP_CBFET2;
+//             faultRegisters[9] = FAULT_COMP_MISC;
+//             break;
+//         case FAULT_PROT_:
+//             faultRegisters[0] = FAULT_PROT1;
+//             faultRegisters[1] = FAULT_PROT2;
+//             break;
+//         default:
+//             break;
+//     }
+
+
+//     return faultRegisters;
+// }
+
+

@@ -5,6 +5,7 @@ uint16_t fault_response_frame[FAULT_FRAME_SIZE];
 
 void setup() {
     SerialUSB.begin(ARDUINO_DUE_BAUDRATE);
+    // CAN.begin(CAN_BPS_500K);
     wakeSequence();
 }
 
@@ -45,30 +46,14 @@ void loop() {
         SerialUSB.println(" C");
     }
 
-/*
-    FAULTS * faultData = readFaults(DEVICE, TOTALBOARDS, FAULT_SUMMARY);
-    int faultDataSize = length(faultData);
-
-    SerialUSB.println("\nFault Data:");
-    if (faultDataSize == 0){
-        SerialUSB.println("No faults detected.");
-    } else {
-        for (int i = 0; i < faultDataSize; i++) {
-            SerialUSB.print("\nFault: ");
-            SerialUSB.println(getFaultSummaryString(faultData[i]));
-
-            int * lowLevelFaultRegisters = getLowLevelFaultRegisters(faultData[i]);
-            
-            SerialUSB.print("Low Level Fault Registers of Fault ");
-            SerialUSB.print(getFaultSummaryString(faultData[i]));
-            SerialUSB.println(": ");
-            for (int i = 0; i < length(lowLevelFaultRegisters); i++) {
-                SerialUSB.print(getFaultString(faultData[i], lowLevelFaultRegisters[i]));
-                SerialUSB.print(" Data: ");
-                SerialUSB.print(getFaultData(DEVICE, lowLevelFaultRegisters[i]), BIN);
-                SerialUSB.print("\n");
-            }
-        }
+    BOARD_FAULT_SUMMARY boardFaultSummary[TOTALBOARDS-1];
+    readFaultSummary(boardFaultSummary);
+    for (size_t i = 0; i < TOTALBOARDS-1; i++) {
+        SerialUSB.print("\nBoard: ");
+        SerialUSB.print(boardFaultSummary[i].board);
+        SerialUSB.print(" Fault Summary: ");
+        SerialUSB.println(boardFaultSummary[i].faultSummary, BIN);
     }
-    */
+    
+    sendFaultFrames(boardFaultSummary);
 }
