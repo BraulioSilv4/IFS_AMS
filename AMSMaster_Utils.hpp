@@ -6,6 +6,7 @@
 #include <due_can.h>
 
 #define ARDUINO_DUE_BAUDRATE    9600
+#define FAULT_TIMEOUT           15000
 #define DEVICE                  0
 #define TOTALFAULT_BIT          8
 #define MAX_LOW_LEVEL_FAULTS    10
@@ -44,6 +45,10 @@ struct FAULT_DATA {
     FAULT topLevelFault;
     uint16_t lowLevelFaults[MAX_LOW_LEVEL_FAULTS];
     size_t size;
+    int rstReg;
+    int rstVal;
+    uint32_t timeout;
+    bool hasTimeoutStarted;
 };
 
 struct BOARD_FAULT_SUMMARY {

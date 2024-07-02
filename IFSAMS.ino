@@ -1,15 +1,16 @@
 #include "AMSMaster_Utils.hpp"
 
-uint16_t response_frame[RESPONSE_FRAME_SIZE];
 uint16_t fault_response_frame[FAULT_FRAME_SIZE];
+long current_time;
 
 void setup() {
     SerialUSB.begin(ARDUINO_DUE_BAUDRATE);
-    // CAN.begin(CAN_BPS_500K);
+    CAN.begin(CAN_BPS_500K);
     wakeSequence();
 }
 
 void loop() {
+    current_time = millis();
     CellVoltage cellData[(TOTALBOARDS-1)*ACTIVECHANNELS];
     readCells(DEVICE, TOTALBOARDS, ACTIVECHANNELS, VCELL16_HI, cellData);
 
@@ -54,6 +55,7 @@ void loop() {
         SerialUSB.print(" Fault Summary: ");
         SerialUSB.println(boardFaultSummary[i].faultSummary, BIN);
     }
+    SerialUSB.println("\n\n");
     
     sendFaultFrames(boardFaultSummary);
 }

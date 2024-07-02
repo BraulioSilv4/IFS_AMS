@@ -269,8 +269,8 @@ int SpiWriteFrame(uint16_t bID, uint16_t wAddr, uint16_t * pData, uint16_t bLen,
 int SpiReadReg(char bID, uint16_t wAddr, uint16_t * pData, char bLen, uint32_t dwTimeOut, char bWriteType) {
     // device address, register start address, byte frame pointer to store data, data length, read type (single, broadcast, stack)
 
-    bRes = 0; //total bytes received
-
+    bRes = 0; //total bytes received    
+    
     //Serial.println(isSPIReady());
     while(!isSPIReady()) {
         delayMicroseconds(1); //wait until SPI_RDY is ready

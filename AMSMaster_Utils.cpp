@@ -24,9 +24,15 @@ void setPins() {
 }
 
 void setRegisters() {
+    // CONFIGURE GPIOS as temp inputs
+    // SpiWriteReg(0, GPIO_CONF1, 0x08, 1, FRMWRT_ALL_W); // GPIO1 and 2 as temp inputs
+    //   WriteReg(0, GPIO_CONF2, 0x09, 1, FRMWRT_ALL_W); // GPIO3 and 4 as temp inputs
+    //   WriteReg(0, GPIO_CONF3, 0x09, 1, FRMWRT_ALL_W); // GPIO5 and 6 as temp inputs
+    //   WriteReg(0, GPIO_CONF4, 0x09, 1, FRMWRT_ALL_W); // GPIO7 and 8 as temp inputs
+
     SpiWriteReg(DEVICE, OV_THRESH, 0x02, 1, FRMWRT_ALL_W); // Sets Over voltage protection to 4.25V
     SpiWriteReg(DEVICE, UV_THRESH, 0x00, 1, FRMWRT_ALL_W); // Sets Under voltage protection to 3.0V
-    SpiWriteReg(DEVICE, OVUV_CTRL, 0x05, 1, FRMWRT_ALL_W); // Sets voltage controls
+    SpiWriteReg(DEVICE, OVUV_CTRL, 0x05, 1, FRMWRT_ALL_W); // Sets voltage controls   
 }
 
 void wakeSequence() {
@@ -43,6 +49,7 @@ void wakeSequence() {
     SPI.begin();
     sendWakeTone();
     SpiAutoAddress();
+    ResetAllFaults(DEVICE, FRMWRT_ALL_W);
     setRegisters();
     activateCells();
     ResetAllFaults(DEVICE, FRMWRT_ALL_W);
@@ -102,23 +109,97 @@ void calculateCellTemperatures(CellVoltage cellData[], CellTemperature cellTempD
 }
 
 FAULT_DATA FaultInfo[TOTALFAULT_BIT] = {
-    {FAULT_PWR_, {FAULT_PWR1, FAULT_PWR2, FAULT_PWR3}, 3},
-    {FAULT_SYS_, {FAULT_SYS}, 1},
-    {FAULT_OVUV_, {FAULT_OV1, FAULT_OV2, FAULT_UV1, FAULT_UV2}, 4},
-    {FAULT_OTUT_, {FAULT_OT, FAULT_UT}, 2},
-    {FAULT_COMM_, {FAULT_COMM1, FAULT_COMM2, FAULT_COMM3}, 3},
-    {FAULT_OTP_, {FAULT_OTP}, 1},
-    {FAULT_COMP_ADC_, {FAULT_COMP_GPIO, FAULT_COMP_VCCB1, FAULT_COMP_VCCB2, FAULT_COMP_VCOW1, FAULT_COMP_VCOW2, FAULT_COMP_CBOW1, FAULT_COMP_CBOW2, FAULT_COMP_CBFET1, FAULT_COMP_CBFET2, FAULT_COMP_MISC}, 10},
-    {FAULT_PROT_, {FAULT_PROT1, FAULT_PROT2}, 2}
+    {
+        FAULT_PWR_,
+        {FAULT_PWR1, FAULT_PWR2, FAULT_PWR3},
+        3, 
+        FAULT_RST1,
+        0x01, 
+        0,
+        false,
+    },
+    {
+        FAULT_SYS_,
+        {FAULT_SYS},
+        1, 
+        FAULT_RST1,
+        0x02,
+        0,
+        false,
+    },
+    {
+        FAULT_OVUV_,
+        {FAULT_OV1, FAULT_OV2, FAULT_UV1, FAULT_UV2},
+        4,
+        FAULT_RST1,
+        0x18,
+        0,
+        false,
+    },
+    {
+        FAULT_OTUT_,
+        {FAULT_OT, FAULT_UT},
+        2,
+        FAULT_RST1,
+        0x60,
+        0,
+        false,
+    },
+    {
+        FAULT_COMM_, 
+        {FAULT_COMM1, FAULT_COMM2, FAULT_COMM3}, 
+        3,
+        FAULT_RST2,
+        0x1F,
+        0,
+        false,
+    },
+    {
+        FAULT_OTP_, 
+        {FAULT_OTP},
+        1,
+        FAULT_RST2,
+        0x60,
+        0,
+        false
+    },
+    {
+        FAULT_COMP_ADC_,
+        {FAULT_COMP_GPIO, FAULT_COMP_VCCB1, FAULT_COMP_VCCB2, FAULT_COMP_VCOW1, FAULT_COMP_VCOW2, FAULT_COMP_CBOW1, FAULT_COMP_CBOW2, FAULT_COMP_CBFET1, FAULT_COMP_CBFET2, FAULT_COMP_MISC},
+        10,
+        FAULT_RST1,
+        0x04,
+        0,
+        false
+    },
+    {
+        FAULT_PROT_,
+        {FAULT_PROT1, FAULT_PROT2},
+        2,
+        FAULT_RST1,
+        0x80,
+        0,
+        false
+    }
 };
+
+void resetClearedFaults(BOARD_FAULT_SUMMARY boardFaultSummary) {
+    for (size_t i = 0; i < TOTALFAULT_BIT; i++) {
+        FAULT fault = static_cast<FAULT>(i);
+        if (!(boardFaultSummary.faultSummary & (1 << i))) {
+            FaultInfo[fault].hasTimeoutStarted = false;
+        }
+    }
+}
 
 void readFaultSummary(BOARD_FAULT_SUMMARY boardsFaultSummary[]) {
     uint16_t fault_response_frame[FAULT_FRAME_SIZE];
     SpiReadReg(DEVICE, FAULT_SUMMARY, fault_response_frame, 1, 0, FRMWRT_STK_R);
 
     for(int currBoard = 0; currBoard < TOTALBOARDS-1; currBoard++) {
-        boardsFaultSummary[currBoard].board = currBoard;
-        boardsFaultSummary[currBoard].faultSummary = static_cast<uint8_t>(fault_response_frame[4+(currBoard*7)]);       
+        boardsFaultSummary[currBoard].board = currBoard+1;
+        boardsFaultSummary[currBoard].faultSummary = static_cast<uint8_t>(fault_response_frame[4+(currBoard*7)]);
+        resetClearedFaults(boardsFaultSummary[currBoard]);       
     }
 }
 
@@ -152,25 +233,15 @@ void sendTemperatureFaultFrame(int device, int reg, uint16_t fault_response_fram
 }
 
 void sendVoltageFaultFrame(int device, int reg, uint16_t fault_response_frame[], int faultType) {
-    SpiReadReg(device+1, reg, fault_response_frame, 2, 0, FRMWRT_SGL_R);
-    uint16_t ov = fault_response_frame[4] << 8 | fault_response_frame[5];
-    SerialUSB.print("Voltage Fault: ");
-    if (faultType == OVER_VOLTAGE)
-    {
-        SerialUSB.println("Over Voltage");
-    }
-    else if (faultType == UNDER_VOLTAGE)
-    {
-        SerialUSB.println("Under Voltage");
-    }
-    
-    SerialUSB.print(faultType);
-    SerialUSB.println(ov, BIN);
-    if (ov != 0) {
-        SerialUSB.println("Voltage Fault");
+    SpiReadReg(device, reg, fault_response_frame, 2, 0, FRMWRT_SGL_R);
+    uint16_t v = fault_response_frame[4] << 8 | fault_response_frame[5];
+
+    SerialUSB.println(faultType);
+    SerialUSB.println(v, BIN);
+    if (v != 0) {
         int baseReg = VCELL16_HI;
         for (size_t i = 0; i < TOTALFAULT_BIT*2; i++) {
-            if (ov & (1 << i)) {
+            if (v & (1 << i)) {
                 CellVoltage cellData = readCell(device, baseReg + i*2, i);
                 CAN_FRAME myCANFrame;
                 myCANFrame.id = VOLTAGE_FAULT_ID;
@@ -212,24 +283,41 @@ void sendFaultFrames(BOARD_FAULT_SUMMARY boardsFaultSummary[]) {
     uint16_t fault_response_frame[FAULT_FRAME_SIZE];
     for(size_t currBoard = 0; currBoard < TOTALBOARDS-1; currBoard++) {
         uint8_t faultSummary = boardsFaultSummary[currBoard].faultSummary;
+        int board = boardsFaultSummary[currBoard].board;
         if (faultSummary != 0) {
             for (size_t i = 0; i < TOTALFAULT_BIT; i++){
+                FAULT fault = static_cast<FAULT>(i);
                 if (faultSummary & (1 << i)) {
-                    FAULT fault = static_cast<FAULT>(i);
                     switch (fault) {
                         case FAULT_OTUT_:
-                            sendTemperatureFaultFrame(currBoard, FAULT_OT, fault_response_frame, OVER_TEMPERATURE);
-                            sendTemperatureFaultFrame(currBoard, FAULT_UT, fault_response_frame, UNDER_TEMPERATURE);
+                            sendTemperatureFaultFrame(board, FAULT_OT, fault_response_frame, OVER_TEMPERATURE);
+                            sendTemperatureFaultFrame(board, FAULT_UT, fault_response_frame, UNDER_TEMPERATURE);
                             break;
                         case FAULT_OVUV_:
-                            SerialUSB.println("Voltage Fault");
-                            sendVoltageFaultFrame(currBoard, FAULT_OV1, fault_response_frame, OVER_VOLTAGE);
-                            sendVoltageFaultFrame(currBoard, FAULT_UV1, fault_response_frame, UNDER_VOLTAGE);
+                            sendVoltageFaultFrame(board, FAULT_OV1, fault_response_frame, OVER_VOLTAGE);
+                            sendVoltageFaultFrame(board, FAULT_UV1, fault_response_frame, UNDER_VOLTAGE);
                             break;   
                         default:
-                            sendFaultFrame(currBoard, fault, fault_response_frame);
+                            sendFaultFrame(board, fault, fault_response_frame);
                             break;
                     }
+
+                    if (!FaultInfo[fault].hasTimeoutStarted) {
+                        SerialUSB.println("\nPRIMEIRO IF");
+                        FaultInfo[fault].timeout = millis();
+                        FaultInfo[fault].hasTimeoutStarted = true;
+                    }
+
+                    if (millis() - FaultInfo[fault].timeout <= FAULT_TIMEOUT){
+                        SpiWriteReg(board, FaultInfo[fault].rstReg, FaultInfo[fault].rstVal, 1, FRMWRT_SGL_W); // reset fault
+                    } else {
+                        while (true)
+                        {
+                            SerialUSB.println("\nSEGUNDO IF");
+                        }
+                        
+                        digitalWrite(nFAULT, LOW);
+                    }    
                 }
             }
         }
