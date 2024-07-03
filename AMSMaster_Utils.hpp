@@ -6,7 +6,10 @@
 #include <due_can.h>
 
 #define ARDUINO_DUE_BAUDRATE    9600
-#define FAULT_TIMEOUT           15000
+#define FAULT_TIMEOUT           5000
+#define UPDATE_INTERVAL         500
+#define FAULT_UPDATE_INTERVAL   100
+#define TEMPERATURE_SCALING_FACTOR 1000000
 #define DEVICE                  0
 #define TOTALFAULT_BIT          8
 #define MAX_LOW_LEVEL_FAULTS    10
@@ -17,12 +20,15 @@
 #define VOLTAGE_FAULT_ID        0x64
 #define TEMPERATURE_FAULT_ID    0x65
 #define FAULT_ID                0x66
+#define BASE_VOLTAGE_FRAME_ID        0x96
+#define BASE_TEMPERATURE_FRAME_ID    0xAE
 
 #define length(array) (sizeof(array) / sizeof(array[0]))
 
 struct CellVoltage {
+    int board;
     int channel;
-    float voltage;
+    uint16_t rawVoltage;
 };
 
 struct CellTemperature {
@@ -41,14 +47,23 @@ enum FAULT {
     FAULT_PROT_
 };
 
-struct FAULT_DATA {
+struct FAULT_INFO {
     FAULT topLevelFault;
     uint16_t lowLevelFaults[MAX_LOW_LEVEL_FAULTS];
     size_t size;
     int rstReg;
     int rstVal;
+};
+
+struct BOARD_FAULT {
+    FAULT fault;
     uint32_t timeout;
     bool hasTimeoutStarted;
+};
+
+struct BOARD_FAULTS_DATA {
+    int boardID; 
+    BOARD_FAULT faults[TOTALFAULT_BIT]; 
 };
 
 struct BOARD_FAULT_SUMMARY {
@@ -56,12 +71,15 @@ struct BOARD_FAULT_SUMMARY {
     uint8_t faultSummary;
 }; 
 
-float complement(uint16_t raw_data);
 void wakeSequence();
-void readCells(int device, int totalBoards, int channels, int reg, CellVoltage cellData[]);
+void initializeInternalStructures();
+void readCells(int channels, int reg, int frameSize, CellVoltage cellData[]);
+void readGPIOS(int channels, int reg, int frameSize, CellVoltage cellData[]);
 void calculateCellTemperatures(CellVoltage cellData[], CellTemperature cellTempData[], int length);
 void readFaultSummary(BOARD_FAULT_SUMMARY boardsFaultSummary[]);
 void sendFaultFrames(BOARD_FAULT_SUMMARY boardFaultSummary[]);
+void sendVoltageFrames(CellVoltage cellData[]);
+void sendTemperatureFrames(CellTemperature cellTempData[]);
 
 #endif // AMSMASTER_UTILS_HPP_
 //EOF

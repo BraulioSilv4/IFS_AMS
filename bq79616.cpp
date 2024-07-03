@@ -268,7 +268,7 @@ int SpiWriteFrame(uint16_t bID, uint16_t wAddr, uint16_t * pData, uint16_t bLen,
 //GENERATE READ COMMAND FRAME AND THEN WAIT FOR RESPONSE DATA (INTERRUPT MODE FOR SCIRX)
 int SpiReadReg(char bID, uint16_t wAddr, uint16_t * pData, char bLen, uint32_t dwTimeOut, char bWriteType) {
     // device address, register start address, byte frame pointer to store data, data length, read type (single, broadcast, stack)
-
+    
     bRes = 0; //total bytes received    
     
     //Serial.println(isSPIReady());
@@ -311,6 +311,7 @@ int SpiReadReg(char bID, uint16_t wAddr, uint16_t * pData, char bLen, uint32_t d
     while(i>(-1))
     {
         while(!isSPIReady()) {
+            SerialUSB.println("Waiting for SPI_RDY");
             delayMicroseconds(100);
         }  //wait until SPI_RDY is ready
         //if there is more than 128 bytes remaining
@@ -382,6 +383,8 @@ int SpiReadReg(char bID, uint16_t wAddr, uint16_t * pData, char bLen, uint32_t d
 }
 
 int isSPIReady() {
+    SerialUSB.println("SPI_RDY: ");
+    SerialUSB.println(digitalRead(SPI_RDY));
     return digitalRead(SPI_RDY);
 }
 

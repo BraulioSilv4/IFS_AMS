@@ -34,7 +34,7 @@
 #include "B0_reg.h"
 
 // User defines
-#define TOTALBOARDS 2      //boards in stack
+#define TOTALBOARDS 3     //boards in stack
 #define CELL_TEMP_NUM 8
 #define ACTIVECHANNELS 16   //channels to activate (incomplete, does not work right now)~
 #define GPIOCHANNELS 8      //channels to read from GPIO
@@ -45,6 +45,8 @@
 #define SPI_RDY 43           //SPI ready pin
 #define nFAULT 46            //fault pin
 #define MOSI 75            //SPI MOSI pin
+#define SHUTDOWN2 38       //shutdown pin
+#define SHUTDOWN1 39       //shutdown pin
 
 // Device defines
 #define N_CELLS 16          //number of cells per device
@@ -52,7 +54,8 @@
 #define REGISTER_SIZE 1   //size of register in bytes
 #define HEADER_SIZE 4       //size of header in bytes
 #define FOOTER_SIZE 2       //size of footer in bytes (CRC)
-#define RESPONSE_FRAME_SIZE (N_CELLS*CELL_REGISTER_SIZE + (HEADER_SIZE + FOOTER_SIZE))*TOTALBOARDS //size of frame in bytes
+#define RESPONSE_FRAME_SIZE N_CELLS*CELL_REGISTER_SIZE + (HEADER_SIZE + FOOTER_SIZE) //size of frame in bytes
+#define GPIO_FRAME_SIZE GPIOCHANNELS*REGISTER_SIZE + (HEADER_SIZE + FOOTER_SIZE) //size of frame in bytes
 //#define CELL_TEMP_NUM 2     //number of cell temperature sensors
 //#define TEMP_FRAME_SIZE (CELL_TEMP_NUM*REGISTER_SIZE + (HEADER_SIZE + FOOTER_SIZE))*TOTALBOARDS //size of frame in bytes
 #define FAULT_FRAME_SIZE (REGISTER_SIZE + (HEADER_SIZE + FOOTER_SIZE))*TOTALBOARDS
