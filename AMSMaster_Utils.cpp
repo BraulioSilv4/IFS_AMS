@@ -46,30 +46,31 @@ void setRegisters() {
     SpiWriteReg(DEVICE, CONTROL2, 0x01, 1, FRMWRT_ALL_W); // enable TSREF
 
     // CONFIGURE GPIOS as temp inputs
-    SpiWriteReg(DEVICE, GPIO_CONF1, 0x12, 1, FRMWRT_STK_W); // GPIO1 and 2 as temp inputs
-    SpiWriteReg(DEVICE, GPIO_CONF2, 0x12, 1, FRMWRT_STK_W); // GPIO3 and 4 as temp inputs
-    SpiWriteReg(DEVICE, GPIO_CONF3, 0x12, 1, FRMWRT_STK_W); // GPIO5 and 6 as temp inputs
-    SpiWriteReg(DEVICE, GPIO_CONF4, 0x12, 1, FRMWRT_STK_W); // GPIO7 and 8 as temp inputs
+    SpiWriteReg(DEVICE, GPIO_CONF1, 0x12, 1, FRMWRT_ALL_W); // GPIO1 and 2 as temp inputs
+    SpiWriteReg(DEVICE, GPIO_CONF2, 0x12, 1, FRMWRT_ALL_W); // GPIO3 and 4 as temp inputs
+    SpiWriteReg(DEVICE, GPIO_CONF3, 0x12, 1, FRMWRT_ALL_W); // GPIO5 and 6 as temp inputs
+    SpiWriteReg(DEVICE, GPIO_CONF4, 0x12, 1, FRMWRT_ALL_W); // GPIO7 and 8 as temp inputs
 
     //SpiWriteReg(0, OTUT_THRESH, 0xDA, 1, FRMWRT_ALL_W); // Sets OV thresh to 80% and UT thresh to 20% to meet rules
 
-    SpiWriteReg(DEVICE, OV_THRESH, 0x22, 1, FRMWRT_STK_W); // Sets Over voltage protection to 4.175V
-    SpiWriteReg(DEVICE, UV_THRESH, 0x24, 1, FRMWRT_STK_W); // Sets Under voltage protection to 3.0V
-    SpiWriteReg(DEVICE, OVUV_CTRL, 0x05, 1, FRMWRT_STK_W); // Sets voltage controls   
+    SpiWriteReg(DEVICE, OV_THRESH, 0x22, 1, FRMWRT_ALL_W); // Sets Over voltage protection to 4.175V
+    SpiWriteReg(DEVICE, UV_THRESH, 0x24, 1, FRMWRT_ALL_W); // Sets Under voltage protection to 3.0V
+    SpiWriteReg(DEVICE, OVUV_CTRL, 0x05, 1, FRMWRT_ALL_W); // Sets voltage controls   
    
     // Activate cells
     SpiWriteReg(1, ACTIVE_CELL, 0x0A, 1, FRMWRT_ALL_W);
     // LPF_ON - LPF = 9ms
     SpiWriteReg(0, ADC_CONF1, 0x04, 1, FRMWRT_ALL_W);
+    // SpiWriteReg(0, ADC_CTRL1, 0x06, 1, FRMWRT_ALL_W);
     // Wait the required round robin time
     delayMicroseconds(192 + (5 * TOTALBOARDS));
     // Sets communication timeout to 2 s
-    SpiWriteReg(DEVICE, COMM_TIMEOUT_CONF, 0x0A, 1, FRMWRT_STK_W); 
+    SpiWriteReg(DEVICE, COMM_TIMEOUT_CONF, 0x0A, 1, FRMWRT_ALL_W); 
 
     // START THE MAIN ADC
-    SpiWriteReg(0, ADC_CTRL1, 0x1E, 1, FRMWRT_STK_W); // continuous run and MAIN_GO and LPF_VCELL_EN and CS_DR = 1ms
-    SpiWriteReg(0, ADC_CTRL2, 0x00, 1, FRMWRT_STK_W); // continuous run and MAIN_GO and LPF_VCELL_EN and CS_DR = 1ms
-    SpiWriteReg(0, ADC_CTRL3, 0x00, 1, FRMWRT_STK_W); // continuous run and MAIN_GO and LPF_VCELL_EN and CS_DR = 1ms
+    SpiWriteReg(0, ADC_CTRL1, 0x1E, 1, FRMWRT_ALL_W); // continuous run and MAIN_GO and LPF_VCELL_EN and CS_DR = 1ms
+    SpiWriteReg(0, ADC_CTRL2, 0x00, 1, FRMWRT_ALL_W); // continuous run and MAIN_GO and LPF_VCELL_EN and CS_DR = 1ms
+    SpiWriteReg(0, ADC_CTRL3, 0x00, 1, FRMWRT_ALL_W); // continuous run and MAIN_GO and LPF_VCELL_EN and CS_DR = 1ms
 }
 
 void wakeSequence() {
@@ -85,7 +86,9 @@ void wakeSequence() {
 
     SPI.begin();
     sendWakeTone();
+
     SpiAutoAddress();
+    
     ResetAllFaults(DEVICE, FRMWRT_ALL_W);
     setRegisters();
     ResetAllFaults(DEVICE, FRMWRT_ALL_W);
@@ -116,11 +119,7 @@ void readCells(int channels, int reg, int frameSize, CellVoltage cellData[]) {
     
     for(int currBoard = 0; currBoard < TOTALBOARDS-1; currBoard++) {
         SpiReadReg(currBoard+1, reg, response_frame, channels*2, 0, FRMWRT_SGL_R);
-        SerialUSB.println("Reading cells from board:");
-        SerialUSB.println(currBoard+1);
         for (int channel = 0; channel < channels*2; channel += 2) {
-            SerialUSB.println("Channel:");
-            SerialUSB.println(channel/2 + 1);
             raw_data = (response_frame[channel + 4] << 8) | response_frame[channel + 5];
             int idx = currBoard*channels + channel/2;
             cellData[idx].board = currBoard+1;
@@ -132,9 +131,14 @@ void readCells(int channels, int reg, int frameSize, CellVoltage cellData[]) {
 
 void readGPIOS(int channels, int reg, int frameSize, CellVoltage cellData[]) {
     uint16_t raw_data = 0;
-    uint16_t response_frame[RESPONSE_FRAME_SIZE];
+    uint16_t response_frame[frameSize];
 
     SpiReadReg(DEVICE, reg, response_frame, channels*2, 0, FRMWRT_STK_R);
+    SerialUSB.println("GPIO DATA:");
+    for (int channel = 0; channel < frameSize; channel += 1) {
+        SerialUSB.print(response_frame[channel], HEX);
+        SerialUSB.print(" ");
+    }
 
     for(int currBoard = 0; currBoard < TOTALBOARDS-1; currBoard++) {
 
@@ -145,6 +149,7 @@ void readGPIOS(int channels, int reg, int frameSize, CellVoltage cellData[]) {
             int idx = currBoard*channels + channel/2;
             cellData[idx].channel = channel/2 + 1;
             cellData[idx].rawVoltage = raw_data;
+            cellData[idx].board = currBoard+1;
         }
     }
     
@@ -331,21 +336,30 @@ void sendVoltageFrames(CellVoltage cellData[]) {
 
 void sendTemperatureFrames(CellTemperature cellTempData[]) {
     for (size_t currBoard = 0; currBoard < TOTALBOARDS-1; currBoard++) {
-        for (size_t channel = 0; channel < GPIOCHANNELS; channel += 2) {
-            int id = BASE_TEMPERATURE_FRAME_ID + currBoard*2 + channel/2;
-            uint32_t firstTemp = cellTempData[currBoard*GPIOCHANNELS + channel].temperature * TEMPERATURE_SCALING_FACTOR;
-            uint32_t secondTemp = cellTempData[currBoard*GPIOCHANNELS + channel + 1].temperature * TEMPERATURE_SCALING_FACTOR;
+        for (size_t channel = 0; channel < GPIOCHANNELS; channel += 4) {
+            int id = BASE_TEMPERATURE_FRAME_ID + currBoard*2 + channel/4;
+            uint16_t firstTemp = static_cast<uint16_t>(cellTempData[currBoard*GPIOCHANNELS + channel].temperature * TEMPERATURE_SCALING_FACTOR);
+            uint16_t secondTemp = static_cast<uint16_t>(cellTempData[currBoard*GPIOCHANNELS + channel + 1].temperature * TEMPERATURE_SCALING_FACTOR);
+            uint16_t thirdTemp = static_cast<uint16_t>(cellTempData[currBoard*GPIOCHANNELS + channel + 2].temperature * TEMPERATURE_SCALING_FACTOR);
+            uint16_t fourthTemp = static_cast<uint16_t>(cellTempData[currBoard*GPIOCHANNELS + channel + 3].temperature * TEMPERATURE_SCALING_FACTOR);
+            SerialUSB.println("BOARD:");
+            SerialUSB.println(currBoard);
+            SerialUSB.println("ID:");
+            SerialUSB.println(id, HEX);
+            // SerialUSB.println("TEMPERATURES:");
+            // SerialUSB.println(firstTemp);
+            // SerialUSB.println(secondTemp);
             CAN_FRAME myCANFrame;
             myCANFrame.id = id;
             myCANFrame.length = 8;
             myCANFrame.data.byte[0] = firstTemp & 0xFF;
             myCANFrame.data.byte[1] = (firstTemp >> 8) & 0xFF;
-            myCANFrame.data.byte[2] = (firstTemp >> 16) & 0xFF;
-            myCANFrame.data.byte[3] = (firstTemp >> 24) & 0xFF;
-            myCANFrame.data.byte[4] = secondTemp & 0xFF;
-            myCANFrame.data.byte[5] = (secondTemp >> 8) & 0xFF;
-            myCANFrame.data.byte[6] = (secondTemp >> 16) & 0xFF;
-            myCANFrame.data.byte[7] = (secondTemp >> 24) & 0xFF;
+            myCANFrame.data.byte[2] = secondTemp & 0xFF;
+            myCANFrame.data.byte[3] = (secondTemp >> 8) & 0xFF;
+            myCANFrame.data.byte[4] = thirdTemp & 0xFF;
+            myCANFrame.data.byte[5] = (thirdTemp >> 8) & 0xFF;
+            myCANFrame.data.byte[6] = fourthTemp & 0xFF;
+            myCANFrame.data.byte[7] = (fourthTemp >> 8) & 0xFF;
 
             Can1.sendFrame(myCANFrame);
         }

@@ -9,7 +9,7 @@
 #define FAULT_TIMEOUT           5000
 #define UPDATE_INTERVAL         500
 #define FAULT_UPDATE_INTERVAL   100
-#define TEMPERATURE_SCALING_FACTOR 1000000
+#define TEMPERATURE_SCALING_FACTOR 100
 #define DEVICE                  0
 #define TOTALFAULT_BIT          8
 #define MAX_LOW_LEVEL_FAULTS    10

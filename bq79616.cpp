@@ -84,9 +84,13 @@ void ResetAllFaults(char bID, char bWriteType)
 {
     if(bWriteType==FRMWRT_ALL_W)
     {
+       
+        
         SpiReadReg(0, CUST_CRC_RSLT_HI, fault_frame, 2, 0, FRMWRT_ALL_R);
         for(currentBoard=0; currentBoard<TOTALBOARDS; currentBoard++)
         {
+  
+            
             SpiWriteReg(TOTALBOARDS-currentBoard-1, CUST_CRC_HI, fault_frame[currentBoard*8+4] << 8 | fault_frame[currentBoard*8+5], 2, FRMWRT_SGL_W);
         }
         SpiWriteReg(0, FAULT_RST1, 0xFFFF, 2, FRMWRT_ALL_W);
@@ -136,6 +140,7 @@ void SpiAutoAddress()
     SpiWriteReg(TOTALBOARDS-1, COMM_CTRL, 0x03, 1, FRMWRT_SGL_W);
 
     //SYNCRHONIZE THE DLL WITH A THROW-AWAY READ
+
     SpiReadReg(0, OTP_ECC_DATAIN1, autoaddr_response_frame, 1, 0, FRMWRT_STK_R);
     SpiReadReg(0, OTP_ECC_DATAIN2, autoaddr_response_frame, 1, 0, FRMWRT_STK_R);
     SpiReadReg(0, OTP_ECC_DATAIN3, autoaddr_response_frame, 1, 0, FRMWRT_STK_R);
@@ -144,19 +149,8 @@ void SpiAutoAddress()
     SpiReadReg(0, OTP_ECC_DATAIN6, autoaddr_response_frame, 1, 0, FRMWRT_STK_R);
     SpiReadReg(0, OTP_ECC_DATAIN7, autoaddr_response_frame, 1, 0, FRMWRT_STK_R);
     SpiReadReg(0, OTP_ECC_DATAIN8, autoaddr_response_frame, 1, 0, FRMWRT_STK_R);
-
-    //Serial.println("Synchronize the dll");
-    //OPTIONAL: read back all device addresses
-    for(currentBoard=0; currentBoard<TOTALBOARDS; currentBoard++)
-    {
-        SpiReadReg(currentBoard, DIR0_ADDR, autoaddr_response_frame, 1, 0, FRMWRT_SGL_R);
-    }
-    //Serial.println("read back all devices address ^");
-
-    //OPTIONAL: read register address 0x2001 and verify that the value is 0x14
-    SpiReadReg(0, 0x2001, autoaddr_response_frame, 1, 0, FRMWRT_SGL_R);
-
-   return;
+    
+    return;
 }
 
 //************************
@@ -311,6 +305,7 @@ int SpiReadReg(char bID, uint16_t wAddr, uint16_t * pData, char bLen, uint32_t d
     while(i>(-1))
     {
         while(!isSPIReady()) {
+            SerialUSB.println("Waiting for SPI_RDY");
             delayMicroseconds(100);
         }  //wait until SPI_RDY is ready
         //if there is more than 128 bytes remaining
