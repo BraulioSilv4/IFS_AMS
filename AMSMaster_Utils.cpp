@@ -42,10 +42,8 @@ void setPins() {
     digitalWrite(SHUTDOWN2, HIGH);
 }
 
-
-
 void setRegisters() {
-    SpiWriteReg(DEVICE, CONTROL2, 0x01, 1, FRMWRT_STK_W); // enable TSREF
+    SpiWriteReg(DEVICE, CONTROL2, 0x01, 1, FRMWRT_ALL_W); // enable TSREF
 
     // CONFIGURE GPIOS as temp inputs
     SpiWriteReg(DEVICE, GPIO_CONF1, 0x12, 1, FRMWRT_STK_W); // GPIO1 and 2 as temp inputs
@@ -53,25 +51,23 @@ void setRegisters() {
     SpiWriteReg(DEVICE, GPIO_CONF3, 0x12, 1, FRMWRT_STK_W); // GPIO5 and 6 as temp inputs
     SpiWriteReg(DEVICE, GPIO_CONF4, 0x12, 1, FRMWRT_STK_W); // GPIO7 and 8 as temp inputs
 
-    SpiWriteReg(0, OTUT_THRESH, 0xDA, 1, FRMWRT_ALL_W); // Sets OV thresh to 80% and UT thresh to 20% to meet rules
+    //SpiWriteReg(0, OTUT_THRESH, 0xDA, 1, FRMWRT_ALL_W); // Sets OV thresh to 80% and UT thresh to 20% to meet rules
 
     SpiWriteReg(DEVICE, OV_THRESH, 0x22, 1, FRMWRT_STK_W); // Sets Over voltage protection to 4.175V
     SpiWriteReg(DEVICE, UV_THRESH, 0x24, 1, FRMWRT_STK_W); // Sets Under voltage protection to 3.0V
     SpiWriteReg(DEVICE, OVUV_CTRL, 0x05, 1, FRMWRT_STK_W); // Sets voltage controls   
    
     // Activate cells
-    SpiWriteReg(1, ACTIVE_CELL, 0x0A, 1, FRMWRT_STK_W);
+    SpiWriteReg(1, ACTIVE_CELL, 0x0A, 1, FRMWRT_ALL_W);
     // LPF_ON - LPF = 9ms
-    SpiWriteReg(0, ADC_CONF1, 0x04, 1, FRMWRT_STK_W);
-    // Set the ADC run mode to continuous
-    SpiWriteReg(1, ADC_CTRL1, 0x06, 1, FRMWRT_STK_W);
+    SpiWriteReg(0, ADC_CONF1, 0x04, 1, FRMWRT_ALL_W);
     // Wait the required round robin time
     delayMicroseconds(192 + (5 * TOTALBOARDS));
-    // Sets communication timeout to 10ms
+    // Sets communication timeout to 2 s
     SpiWriteReg(DEVICE, COMM_TIMEOUT_CONF, 0x0A, 1, FRMWRT_STK_W); 
 
     // START THE MAIN ADC
-    SpiWriteReg(0, ADC_CTRL1, 0x1A, 1, FRMWRT_STK_W); // continuous run and MAIN_GO and LPF_VCELL_EN and CS_DR = 1ms
+    SpiWriteReg(0, ADC_CTRL1, 0x1E, 1, FRMWRT_STK_W); // continuous run and MAIN_GO and LPF_VCELL_EN and CS_DR = 1ms
     SpiWriteReg(0, ADC_CTRL2, 0x00, 1, FRMWRT_STK_W); // continuous run and MAIN_GO and LPF_VCELL_EN and CS_DR = 1ms
     SpiWriteReg(0, ADC_CTRL3, 0x00, 1, FRMWRT_STK_W); // continuous run and MAIN_GO and LPF_VCELL_EN and CS_DR = 1ms
 }
@@ -120,8 +116,11 @@ void readCells(int channels, int reg, int frameSize, CellVoltage cellData[]) {
     
     for(int currBoard = 0; currBoard < TOTALBOARDS-1; currBoard++) {
         SpiReadReg(currBoard+1, reg, response_frame, channels*2, 0, FRMWRT_SGL_R);
-        
+        SerialUSB.println("Reading cells from board:");
+        SerialUSB.println(currBoard+1);
         for (int channel = 0; channel < channels*2; channel += 2) {
+            SerialUSB.println("Channel:");
+            SerialUSB.println(channel/2 + 1);
             raw_data = (response_frame[channel + 4] << 8) | response_frame[channel + 5];
             int idx = currBoard*channels + channel/2;
             cellData[idx].board = currBoard+1;
