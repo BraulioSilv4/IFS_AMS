@@ -20,6 +20,7 @@ void initializeInternalStructures() {
             boardsFaultsData[i].faults[j].fault = static_cast<FAULT>(j);
             boardsFaultsData[i].faults[j].timeout = 0;
             boardsFaultsData[i].faults[j].hasTimeoutStarted = false;
+            boardsFaultsData[i].faults[j].hasTimeoutEnded = false;
         }
     }
 }
@@ -51,7 +52,7 @@ void setRegisters() {
     SpiWriteReg(DEVICE, GPIO_CONF3, 0x12, 1, FRMWRT_ALL_W); // GPIO5 and 6 as temp inputs
     SpiWriteReg(DEVICE, GPIO_CONF4, 0x12, 1, FRMWRT_ALL_W); // GPIO7 and 8 as temp inputs
 
-    //SpiWriteReg(0, OTUT_THRESH, 0xDA, 1, FRMWRT_ALL_W); // Sets OV thresh to 80% and UT thresh to 20% to meet rules
+    SpiWriteReg(DEVICE, OTUT_THRESH, 0xDA, 1, FRMWRT_ALL_W); // Sets OV thresh to 80% and UT thresh to 20% to meet rules
 
     SpiWriteReg(DEVICE, OV_THRESH, 0x22, 1, FRMWRT_ALL_W); // Sets Over voltage protection to 4.175V
     SpiWriteReg(DEVICE, UV_THRESH, 0x24, 1, FRMWRT_ALL_W); // Sets Under voltage protection to 3.0V
@@ -94,6 +95,11 @@ void wakeSequence() {
     ResetAllFaults(DEVICE, FRMWRT_ALL_W);
 }
 
+void restartChips() {
+    wakeSequence();
+    ResetAllFaults(DEVICE, FRMWRT_ALL_W);
+} 
+
 void shutdown() {
     digitalWrite(SHUTDOWN1, LOW);
     digitalWrite(SHUTDOWN2, LOW);
@@ -112,6 +118,8 @@ CellVoltage readCell(int device, int reg, int channel) {
 
     return cellData;
 }
+
+
 
 void readCells(int channels, int reg, int frameSize, CellVoltage cellData[]) {
     uint16_t raw_data = 0;
@@ -169,6 +177,9 @@ void calculateCellTemperatures(CellVoltage cellData[], CellTemperature cellTempD
     for (int i = 0; i < length; i++) {
         float cellVoltage = cellData[i].rawVoltage * 0.00015259;
         double temp = Interpolation::Linear(xValues, yValues, 33, cellVoltage, true);
+        if (temp < -10) {
+
+        }
         cellTempData[i].channel = cellData[i].channel;
         cellTempData[i].temperature = static_cast<float>(temp);
     }
@@ -180,49 +191,109 @@ void resetClearedFaults(BOARD_FAULT_SUMMARY boardFaultSummary) {
         int boardIdx = boardFaultSummary.board - 1;
         uint8_t faultSummary = boardFaultSummary.faultSummary;
         if (!(faultSummary & (1 << i))) {
-            if (boardsFaultsData[boardIdx].faults[i].hasTimeoutStarted) {
+            if (boardsFaultsData[boardIdx].faults[i].hasTimeoutStarted && fault != FAULT_OTUT_) {
                 boardsFaultsData[boardIdx].faults[i].hasTimeoutStarted = false;
             }
         }
     }
 }
 
-void readFaultSummary(BOARD_FAULT_SUMMARY boardsFaultSummary[]) {
+void readFaultSummary() {
+    BOARD_FAULT_SUMMARY boardsFaultSummary[TOTALBOARDS-1];
     uint16_t fault_response_frame[FAULT_FRAME_SIZE];
-    SpiReadReg(DEVICE, FAULT_SUMMARY, fault_response_frame, 1, 0, FRMWRT_STK_R);
 
     for(int currBoard = 0; currBoard < TOTALBOARDS-1; currBoard++) {
+        SpiReadReg(currBoard+1, FAULT_SUMMARY, fault_response_frame, 1, 0, FRMWRT_SGL_R);
+
         boardsFaultSummary[currBoard].board = currBoard+1;
-        boardsFaultSummary[currBoard].faultSummary = static_cast<uint8_t>(fault_response_frame[4+(currBoard*7)]);
-        resetClearedFaults(boardsFaultSummary[currBoard]);       
-    }
+        boardsFaultSummary[currBoard].faultSummary = static_cast<uint8_t>(fault_response_frame[4]);
+        resetClearedFaults(boardsFaultSummary[currBoard]);  
+
+        int board = boardsFaultSummary[currBoard].board;
+        uint8_t faultSummary = boardsFaultSummary[currBoard].faultSummary;
+
+        int baseReg = GPIO8_HI;
+        for (size_t channel = 0; channel < GPIOCHANNELS; channel++) {
+            CellVoltage GPIOdata = readCell(board, baseReg + channel*2, channel);
+            CellTemperature cellTempData[1];
+            calculateCellTemperatures(&GPIOdata, cellTempData, 1);
+            float GPIOtemp = cellTempData[0].temperature;
+
+            if (GPIOtemp < -10 || GPIOtemp > 60) {
+                if (!boardsFaultsData[currBoard].faults[FAULT_OTUT_].hasTimeoutStarted) {
+                    boardsFaultsData[currBoard].faults[FAULT_OTUT_].timeout = millis();
+                    boardsFaultsData[currBoard].faults[FAULT_OTUT_].hasTimeoutStarted = true;
+                } 
+            
+                if (millis() - boardsFaultsData[currBoard].faults[FAULT_OTUT_].timeout > FAULT_TIMEOUT){
+                    boardsFaultsData[currBoard].faults[FAULT_OTUT_].hasTimeoutEnded = true;
+                } 
+                break;
+            } else if (boardsFaultsData[currBoard].faults[FAULT_OTUT_].hasTimeoutStarted) {    
+                boardsFaultsData[currBoard].faults[FAULT_OTUT_].hasTimeoutStarted = false;
+            }
+        }
+
+        if (faultSummary != 0) {
+            for (size_t j = 0; j < TOTALFAULT_BIT; j++){
+                FAULT fault = static_cast<FAULT>(j);
+                
+                if (faultSummary & (1 << j) && fault != FAULT_OTUT_) {
+                    if (!boardsFaultsData[currBoard].faults[j].hasTimeoutStarted) {
+                        boardsFaultsData[currBoard].faults[j].timeout = millis();
+                        boardsFaultsData[currBoard].faults[j].hasTimeoutStarted = true;
+                    } 
+
+                    if (millis() - boardsFaultsData[currBoard].faults[j].timeout <= FAULT_TIMEOUT){
+                        SpiWriteReg(board, FaultInfo[fault].rstReg, FaultInfo[fault].rstVal, 1, FRMWRT_SGL_W); // reset fault
+                    } else {
+                        boardsFaultsData[currBoard].faults[j].hasTimeoutEnded = true;
+                    }
+                }
+            }     
+        }
+    }   
 }
  
-void sendTemperatureFaultFrame(int device, int reg, uint16_t fault_response_frame[], int faultType) {
-    SpiReadReg(device, reg, fault_response_frame, 1, 0, FRMWRT_SGL_R);
-    uint16_t t = fault_response_frame[4];
-    if (t != 0) {
-        int baseReg = GPIO8_HI;
-        for (size_t i = 0; i < TOTALFAULT_BIT; i++) {
-            if (t & (1 << i)) {
-                CellVoltage GPIOdata = readCell(device, baseReg + i*2, i);
-                CellTemperature cellTempData[1];
-                calculateCellTemperatures(&GPIOdata, cellTempData, 1);
-                float GPIOtemp = cellTempData[0].temperature;
+void sendTemperatureFaultFrame(int device) {
+    int baseReg = GPIO8_HI;
+    for (size_t i = 0; i < GPIOCHANNELS; i++) {
+        CellVoltage GPIOdata = readCell(device, baseReg + i*2, i);
+        CellTemperature cellTempData[1];
+        calculateCellTemperatures(&GPIOdata, cellTempData, 1);
+        float GPIOtemp = cellTempData[0].temperature;
+        if (GPIOtemp < -10) {
+            CAN_FRAME myCANFrame;
+            myCANFrame.id = TEMPERATURE_FAULT_ID;
+            myCANFrame.length = 7;
+            myCANFrame.extended = false;
+            myCANFrame.data.byte[0] = device;
+            myCANFrame.data.byte[1] = i+1;
+            myCANFrame.data.byte[2] = UNDER_TEMPERATURE;
+            myCANFrame.data.byte[3] = static_cast<uint8_t>(GPIOtemp) & 0xFF;
+            myCANFrame.data.byte[4] = (static_cast<uint8_t>(GPIOtemp) >> 8) & 0xFF;
+            myCANFrame.data.byte[5] = (static_cast<uint8_t>(GPIOtemp) >> 16) & 0xFF;;
+            myCANFrame.data.byte[6] = (static_cast<uint8_t>(GPIOtemp) >> 24) & 0xFF;
 
-                CAN_FRAME myCANFrame;
-                myCANFrame.id = TEMPERATURE_FAULT_ID;
-                myCANFrame.length = 7;
-                myCANFrame.data.byte[0] = device;
-                myCANFrame.data.byte[1] = i;
-                myCANFrame.data.byte[2] = faultType;
-                myCANFrame.data.byte[3] = static_cast<uint8_t>(GPIOtemp) & 0xFF;
-                myCANFrame.data.byte[4] = (static_cast<uint8_t>(GPIOtemp) >> 8) & 0xFF;
-                myCANFrame.data.byte[5] = (static_cast<uint8_t>(GPIOtemp) >> 16) & 0xFF;;
-                myCANFrame.data.byte[6] = (static_cast<uint8_t>(GPIOtemp) >> 24) & 0xFF;
+            int currentMillis = millis();
+            while (!Can1.available() && millis() - currentMillis <= 10);
+            Can1.sendFrame(myCANFrame);
+        } else if (GPIOtemp > 60) {
+            CAN_FRAME myCANFrame;
+            myCANFrame.id = TEMPERATURE_FAULT_ID;
+            myCANFrame.length = 7;
+            myCANFrame.extended = false;
+            myCANFrame.data.byte[0] = device;
+            myCANFrame.data.byte[1] = i+1;
+            myCANFrame.data.byte[2] = OVER_TEMPERATURE;
+            myCANFrame.data.byte[3] = static_cast<uint8_t>(GPIOtemp) & 0xFF;
+            myCANFrame.data.byte[4] = (static_cast<uint8_t>(GPIOtemp) >> 8) & 0xFF;
+            myCANFrame.data.byte[5] = (static_cast<uint8_t>(GPIOtemp) >> 16) & 0xFF;;
+            myCANFrame.data.byte[6] = (static_cast<uint8_t>(GPIOtemp) >> 24) & 0xFF;
 
-                Can1.sendFrame(myCANFrame);
-            }
+            int currentMillis = millis();
+            while (!Can1.available() && millis() - currentMillis <= 10);
+            Can1.sendFrame(myCANFrame);
         }
     }
 }
@@ -240,12 +311,15 @@ void sendVoltageFaultFrame(int device, int reg, uint16_t fault_response_frame[],
                 CAN_FRAME myCANFrame;
                 myCANFrame.id = VOLTAGE_FAULT_ID;
                 myCANFrame.length = 5;
+                myCANFrame.extended = false;
                 myCANFrame.data.byte[0] = device;
                 myCANFrame.data.byte[1] = ACTIVECHANNELS - i;
                 myCANFrame.data.byte[2] = faultType;
                 myCANFrame.data.byte[3] = cellData.rawVoltage & 0xFF;
                 myCANFrame.data.byte[4] = (cellData.rawVoltage >> 8) & 0xFF;
 
+                int currentMillis = millis();
+                while (!Can1.available() && millis() - currentMillis <= 10);
                 Can1.sendFrame(myCANFrame);    
             }
         }
@@ -261,52 +335,42 @@ void sendFaultFrame(int device, FAULT fault, uint16_t fault_response_frame[]) {
             CAN_FRAME myCANFrame;
             myCANFrame.id = FAULT_ID;
             myCANFrame.length = 4;
+            myCANFrame.extended = false;
             myCANFrame.data.byte[0] = device;
             myCANFrame.data.byte[1] = fault;
             myCANFrame.data.byte[2] = i;
             myCANFrame.data.byte[3] = f;
             
+            int currentMillis = millis();
+            while (!Can1.available() && millis() - currentMillis <= 10);
             Can1.sendFrame(myCANFrame);
         }
     }
 }
 
-void sendFaultFrames(BOARD_FAULT_SUMMARY boardsFaultSummary[]) {
+void sendFaultFrames() {
     uint16_t fault_response_frame[FAULT_FRAME_SIZE];
-    for(size_t i = 0; i < TOTALBOARDS-1; i++) {
-        uint8_t faultSummary = boardsFaultSummary[i].faultSummary;
-        int board = boardsFaultSummary[i].board;
-        if (faultSummary != 0) {
-            for (size_t j = 0; j < TOTALFAULT_BIT; j++){
-                FAULT fault = static_cast<FAULT>(j);
-                if (faultSummary & (1 << j)) {
-                    if (!boardsFaultsData[i].faults[j].hasTimeoutStarted) {
-                        boardsFaultsData[i].faults[j].timeout = millis();
-                        boardsFaultsData[i].faults[j].hasTimeoutStarted = true;
-                    } 
-
-                    if (millis() - boardsFaultsData[i].faults[j].timeout <= FAULT_TIMEOUT){
-                        SpiWriteReg(board, FaultInfo[fault].rstReg, FaultInfo[fault].rstVal, 1, FRMWRT_SGL_W); // reset fault
-                    } else {
-                        switch (fault) {
-                            case FAULT_OTUT_:
-                                sendTemperatureFaultFrame(board, FAULT_OT, fault_response_frame, OVER_TEMPERATURE);
-                                sendTemperatureFaultFrame(board, FAULT_UT, fault_response_frame, UNDER_TEMPERATURE);
-                                break;
-                            case FAULT_OVUV_:
-                                sendVoltageFaultFrame(board, FAULT_OV1, fault_response_frame, OVER_VOLTAGE);
-                                sendVoltageFaultFrame(board, FAULT_UV1, fault_response_frame, UNDER_VOLTAGE);
-                                break;   
-                            default:
-                                sendFaultFrame(board, fault, fault_response_frame);
-                                break;
-                        }
-                        //shutdown();
+    for (size_t i = 0; i < TOTALBOARDS-1; i++) {
+        for (size_t j = 0; j < TOTALFAULT_BIT; j++) {
+            FAULT fault = static_cast<FAULT>(j);
+            int board = boardsFaultsData[i].boardID;
+            if (boardsFaultsData[i].faults[j].hasTimeoutEnded) {
+                switch (fault) {
+                    case FAULT_OTUT_:
+                        sendTemperatureFaultFrame(board);
+                        break;
+                    case FAULT_OVUV_:
+                        sendVoltageFaultFrame(board, FAULT_OV1, fault_response_frame, OVER_VOLTAGE);
+                        sendVoltageFaultFrame(board, FAULT_UV1, fault_response_frame, UNDER_VOLTAGE);
+                        break;   
+                    default:
+                        sendFaultFrame(board, fault, fault_response_frame);
+                        break;
                     }
-                }
+                shutdown();
             }
         }
-    }
+    } 
 }
 
 void sendVoltageFrames(CellVoltage cellData[]) {
@@ -320,6 +384,7 @@ void sendVoltageFrames(CellVoltage cellData[]) {
             CAN_FRAME myCANFrame;
             myCANFrame.id = id;
             myCANFrame.length = 8;
+            myCANFrame.extended = false;
             myCANFrame.data.byte[0] = firstVoltage & 0xFF;
             myCANFrame.data.byte[1] = (firstVoltage >> 8) & 0xFF;
             myCANFrame.data.byte[2] = secondVoltage & 0xFF;
@@ -329,6 +394,8 @@ void sendVoltageFrames(CellVoltage cellData[]) {
             myCANFrame.data.byte[6] = fourthVoltage & 0xFF;
             myCANFrame.data.byte[7] = (fourthVoltage >> 8) & 0xFF;
             
+            int currentMillis = millis();
+            while (!Can1.available() && millis() - currentMillis <= 10);
             Can1.sendFrame(myCANFrame);
         }
     }
@@ -338,20 +405,15 @@ void sendTemperatureFrames(CellTemperature cellTempData[]) {
     for (size_t currBoard = 0; currBoard < TOTALBOARDS-1; currBoard++) {
         for (size_t channel = 0; channel < GPIOCHANNELS; channel += 4) {
             int id = BASE_TEMPERATURE_FRAME_ID + currBoard*2 + channel/4;
-            uint16_t firstTemp = static_cast<uint16_t>(cellTempData[currBoard*GPIOCHANNELS + channel].temperature * TEMPERATURE_SCALING_FACTOR);
-            uint16_t secondTemp = static_cast<uint16_t>(cellTempData[currBoard*GPIOCHANNELS + channel + 1].temperature * TEMPERATURE_SCALING_FACTOR);
-            uint16_t thirdTemp = static_cast<uint16_t>(cellTempData[currBoard*GPIOCHANNELS + channel + 2].temperature * TEMPERATURE_SCALING_FACTOR);
-            uint16_t fourthTemp = static_cast<uint16_t>(cellTempData[currBoard*GPIOCHANNELS + channel + 3].temperature * TEMPERATURE_SCALING_FACTOR);
-            SerialUSB.println("BOARD:");
-            SerialUSB.println(currBoard);
-            SerialUSB.println("ID:");
-            SerialUSB.println(id, HEX);
-            // SerialUSB.println("TEMPERATURES:");
-            // SerialUSB.println(firstTemp);
-            // SerialUSB.println(secondTemp);
+            int16_t firstTemp = static_cast<int16_t>(cellTempData[currBoard*GPIOCHANNELS + channel].temperature * TEMPERATURE_SCALING_FACTOR);
+            int16_t secondTemp = static_cast<int16_t>(cellTempData[currBoard*GPIOCHANNELS + channel + 1].temperature * TEMPERATURE_SCALING_FACTOR);
+            int16_t thirdTemp = static_cast<int16_t>(cellTempData[currBoard*GPIOCHANNELS + channel + 2].temperature * TEMPERATURE_SCALING_FACTOR);
+            int16_t fourthTemp = static_cast<int16_t>(cellTempData[currBoard*GPIOCHANNELS + channel + 3].temperature * TEMPERATURE_SCALING_FACTOR);
+        
             CAN_FRAME myCANFrame;
             myCANFrame.id = id;
             myCANFrame.length = 8;
+            myCANFrame.extended = false;
             myCANFrame.data.byte[0] = firstTemp & 0xFF;
             myCANFrame.data.byte[1] = (firstTemp >> 8) & 0xFF;
             myCANFrame.data.byte[2] = secondTemp & 0xFF;
@@ -361,6 +423,8 @@ void sendTemperatureFrames(CellTemperature cellTempData[]) {
             myCANFrame.data.byte[6] = fourthTemp & 0xFF;
             myCANFrame.data.byte[7] = (fourthTemp >> 8) & 0xFF;
 
+            int currentMillis = millis();
+            while (!Can1.available() && millis() - currentMillis <= 10);
             Can1.sendFrame(myCANFrame);
         }
     }

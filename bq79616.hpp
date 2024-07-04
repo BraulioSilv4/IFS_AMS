@@ -35,6 +35,7 @@
 
 // User defines
 #define TOTALBOARDS 4     //boards in stack
+#define COMM_TIMEOUT            5000
 #define CELL_TEMP_NUM 8
 #define ACTIVECHANNELS 16   //channels to activate (incomplete, does not work right now)~
 #define GPIOCHANNELS 8      //channels to read from GPIO
@@ -58,7 +59,7 @@
 #define GPIO_FRAME_SIZE GPIOCHANNELS*REGISTER_SIZE + (HEADER_SIZE + FOOTER_SIZE) //size of frame in bytes
 //#define CELL_TEMP_NUM 2     //number of cell temperature sensors
 //#define TEMP_FRAME_SIZE (CELL_TEMP_NUM*REGISTER_SIZE + (HEADER_SIZE + FOOTER_SIZE))*TOTALBOARDS //size of frame in bytes
-#define FAULT_FRAME_SIZE (REGISTER_SIZE + (HEADER_SIZE + FOOTER_SIZE))*TOTALBOARDS
+#define FAULT_FRAME_SIZE (REGISTER_SIZE + (HEADER_SIZE + FOOTER_SIZE))
 
 #define FRMWRT_SGL_R	0x00    //single device READ
 #define FRMWRT_SGL_W	0x10    //single device WRITE
@@ -95,6 +96,7 @@ struct BMS_status{
     bool fault;
 };
 
+extern bool comm_fault;
 // }
 #endif /* BQ79606_H_ */
 //EOF

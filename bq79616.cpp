@@ -18,7 +18,7 @@
 #include "bq79616.hpp"
 #define DEBUG true
 
-extern bool comm_fault = false;
+bool comm_fault;
 
 //GLOBAL VARIABLES (use these to avoid stack overflows by creating too many function variables)
 //avoid creating variables/arrays in functions, or you will run out of stack space quickly
@@ -262,13 +262,23 @@ int SpiWriteFrame(uint16_t bID, uint16_t wAddr, uint16_t * pData, uint16_t bLen,
 //GENERATE READ COMMAND FRAME AND THEN WAIT FOR RESPONSE DATA (INTERRUPT MODE FOR SCIRX)
 int SpiReadReg(char bID, uint16_t wAddr, uint16_t * pData, char bLen, uint32_t dwTimeOut, char bWriteType) {
     // device address, register start address, byte frame pointer to store data, data length, read type (single, broadcast, stack)
-    
+    unsigned long start = millis();
     bRes = 0; //total bytes received    
     
     //Serial.println(isSPIReady());
     while(!isSPIReady()) {
+        SerialUSB.println("Waiting for SPI_RDY1");
+        SerialUSB.println(millis() - start);
         delayMicroseconds(1); //wait until SPI_RDY is ready
+        if (millis() - start > COMM_TIMEOUT) {
+            SerialUSB.println("Communication fault detected.#################################################");
+            comm_fault = true;
+            return -1;
+        } else {
+            comm_fault = false;
+        }
     }
+        //Serial.println("SPI_RDY is ready"
     //send the read request to the 600
     spiReturn = bLen - 1;
     SpiWriteFrame(bID, wAddr, &spiReturn, 1, bWriteType); //send the read request command frame
@@ -300,14 +310,25 @@ int SpiReadReg(char bID, uint16_t wAddr, uint16_t * pData, char bLen, uint32_t d
     i = (int)(M/128);
     //prepare the remainder that is left over after the last full 128-byte read
     K = M - i*128;
-    
+    start = millis();
     //loop until we've read all data bytes
     while(i>(-1))
     {
         while(!isSPIReady()) {
-            SerialUSB.println("Waiting for SPI_RDY");
+            SerialUSB.println("Waiting for SPI_RDY2");
+            SerialUSB.println(millis() - start);
             delayMicroseconds(100);
-        }  //wait until SPI_RDY is ready
+            if (millis() - start > COMM_TIMEOUT) {
+                SerialUSB.println("Communication fault detected2. #################################################");
+                comm_fault = true;
+                return -1;  
+            } else {
+                SerialUSB.println("Communication fault detected3. #################################################");
+                comm_fault = false;
+            }
+        }  
+       
+        //wait until SPI_RDY is ready
         //if there is more than 128 bytes remaining
         if(i>0)
         {
