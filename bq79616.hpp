@@ -25,6 +25,7 @@
 #include "stdio.h"
 #include "stdbool.h"
 #include "string.h"
+#include "due_can.h"
 
 //****************************************************
 // ***Register defines, choose one of the following***
@@ -35,7 +36,8 @@
 
 // User defines
 #define TOTALBOARDS 4     //boards in stack
-#define COMM_TIMEOUT            5000
+#define COMM_TIMEOUT 900
+#define COMM_FAULT_ID 0x67
 #define CELL_TEMP_NUM 8
 #define ACTIVECHANNELS 16   //channels to activate (incomplete, does not work right now)~
 #define GPIOCHANNELS 8      //channels to read from GPIO
@@ -48,6 +50,9 @@
 #define MOSI 75            //SPI MOSI pin
 #define SHUTDOWN2 38       //shutdown pin
 #define SHUTDOWN1 39       //shutdown pin
+#define AIRMinus_STATE 54
+#define PRE_STATE 55
+#define AIRPlus_STATE 67
 
 // Device defines
 #define N_CELLS 16          //number of cells per device
@@ -81,6 +86,7 @@ int SpiWriteFrame(uint16_t bID, uint16_t wAddr, uint16_t * pData, uint16_t bLen,
 uint32_t SpiCRC16(uint16_t *pBuf, int nLen);
 void SpiExchange(uint16_t *data, int len);
 int isSPIReady();
+void shutdown();
 
 int SpiReadReg(char bID, uint16_t wAddr, uint16_t * pData, char bLen, uint32_t dwTimeOut, char bWriteType);
 
@@ -97,6 +103,6 @@ struct BMS_status{
 };
 
 extern bool comm_fault;
-// }
+
 #endif /* BQ79606_H_ */
 //EOF

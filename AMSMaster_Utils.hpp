@@ -3,7 +3,7 @@
 
 #include <InterpolationLib.h>
 #include "bq79616.hpp"
-#include <due_can.h>
+
 
 #define ARDUINO_DUE_BAUDRATE    9600
 #define FAULT_TIMEOUT           500
@@ -11,7 +11,8 @@
 #define VOLTAGE_FAULT_TIMEOUT   500
 #define UPDATE_INTERVAL         500
 #define READ_FAULT_INTERVAL     100
-#define FAULT_UPDATE_INTERVAL   2000
+#define FAULT_UPDATE_INTERVAL   500
+#define BAL_TIME                20000
 
 #define TEMPERATURE_SCALING_FACTOR 100
 #define DEVICE                  0
@@ -21,11 +22,15 @@
 #define UNDER_TEMPERATURE       0
 #define OVER_VOLTAGE           1
 #define UNDER_VOLTAGE          0
-#define VOLTAGE_FAULT_ID        0x64
-#define TEMPERATURE_FAULT_ID    0x65
-#define FAULT_ID                0x66
-#define BASE_VOLTAGE_FRAME_ID        0x96
-#define BASE_TEMPERATURE_FRAME_ID    0xAE
+#define VOLTAGE_FAULT_ID        0x12D
+#define TEMPERATURE_FAULT_ID    0x12E
+#define FAULT_ID                0x12F
+#define COMM_FAULT_ID           0x154
+#define AR_STATE_FRAME_ID       0x155
+#define BASE_VOLTAGE_FRAME_ID        0x130
+#define BASE_TEMPERATURE_FRAME_ID    0x148
+#define INCOMING_CB_FRAME_ID        0x12B
+#define BASE_CB_FRAME_ID            0x12C
 
 #define length(array) (sizeof(array) / sizeof(array[0]))
 
@@ -77,7 +82,9 @@ struct BOARD_FAULT_SUMMARY {
 }; 
 
 void wakeSequence();
-void restartChips();
+
+void sendCommFaultFrame();
+void sendCellBalacingFrames(bool hasFinishedBalancing);
 void initializeInternalStructures();
 void readCells(int channels, int reg, int frameSize, CellVoltage cellData[]);
 void readGPIOS(int channels, int reg, int frameSize, CellVoltage cellData[]);
@@ -86,6 +93,8 @@ void readFaultSummary();
 void sendFaultFrames();
 void sendVoltageFrames(CellVoltage cellData[]);
 void sendTemperatureFrames(CellTemperature cellTempData[]);
+void sendARStateFrame();
+void balanceCells(double thresh);
 
 #endif // AMSMASTER_UTILS_HPP_
 //EOF

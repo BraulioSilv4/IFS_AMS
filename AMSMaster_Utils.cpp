@@ -34,6 +34,9 @@ void setPins() {
     pinMode(nCS, OUTPUT);
     pinMode(MOSI, OUTPUT);
     pinMode(SPI_RDY, INPUT);
+    pinMode(AIRMinus_STATE, INPUT);
+    pinMode(PRE_STATE, INPUT);
+    pinMode(AIRPlus_STATE, INPUT);
     pinMode(SHUTDOWN1, OUTPUT);
     pinMode(SHUTDOWN2, OUTPUT);
 
@@ -57,7 +60,14 @@ void setRegisters() {
     SpiWriteReg(DEVICE, OV_THRESH, 0x22, 1, FRMWRT_ALL_W); // Sets Over voltage protection to 4.175V
     SpiWriteReg(DEVICE, UV_THRESH, 0x24, 1, FRMWRT_ALL_W); // Sets Under voltage protection to 3.0V
     SpiWriteReg(DEVICE, OVUV_CTRL, 0x05, 1, FRMWRT_ALL_W); // Sets voltage controls   
+
+    SpiWriteReg(0, BAL_CTRL1, 0x01, 1, FRMWRT_ALL_W); // Sets balance length to 10s
+    SpiWriteReg(0, BAL_CTRL2, 0x01, 1, FRMWRT_ALL_W); // Sets enables auto balancing
    
+    for (int i = 0; i < ACTIVECHANNELS; i++) {
+        SpiWriteReg(DEVICE, CB_CELL16_CTRL + i, 0x01, 1, FRMWRT_ALL_W); // Sets cell balancing to 10s
+    }
+
     // Activate cells
     SpiWriteReg(1, ACTIVE_CELL, 0x0A, 1, FRMWRT_ALL_W);
     // LPF_ON - LPF = 9ms
@@ -95,14 +105,34 @@ void wakeSequence() {
     ResetAllFaults(DEVICE, FRMWRT_ALL_W);
 }
 
-void restartChips() {
-    wakeSequence();
-    ResetAllFaults(DEVICE, FRMWRT_ALL_W);
-} 
+void balanceCells(double thresh) {
+    if (thresh < 2.45 || thresh > 4) {
+        return;
+    }
 
-void shutdown() {
-    digitalWrite(SHUTDOWN1, LOW);
-    digitalWrite(SHUTDOWN2, LOW);
+    uint16_t response[FAULT_FRAME_SIZE];
+    SpiReadReg(3, BAL_STAT, response, 1, 0, FRMWRT_SGL_R);
+    bool cellBalComplete = response[4] & 0x01;
+    
+    CAN_FRAME myCANFrame;
+    myCANFrame.id = 0x12C;
+    myCANFrame.length = 1;
+    myCANFrame.extended = false;
+    myCANFrame.data.byte[0] = static_cast<uint8_t>(cellBalComplete);
+
+    int currentMillis = millis();
+    while (!Can1.available() && millis() - currentMillis <= 10);
+    Can1.sendFrame(myCANFrame);
+
+    uint8_t balanceReg;
+    uint8_t step = 0.025;
+
+    uint8_t offset = (thresh - 2.45)/step;
+    SerialUSB.println(offset + 0x01, HEX);
+
+    SpiWriteReg(DEVICE, VCB_DONE_THRESH, 0x01 + offset, 1, FRMWRT_ALL_W); // Sets balance threshold
+    SpiWriteReg(DEVICE, OVUV_CTRL, 0x05, 1, FRMWRT_ALL_W); // Sets voltage controls
+    SpiWriteReg(0, BAL_CTRL2, 0x03, 1, FRMWRT_ALL_W);
 }
 
 CellVoltage readCell(int device, int reg, int channel) {
@@ -142,11 +172,6 @@ void readGPIOS(int channels, int reg, int frameSize, CellVoltage cellData[]) {
     uint16_t response_frame[frameSize];
 
     SpiReadReg(DEVICE, reg, response_frame, channels*2, 0, FRMWRT_STK_R);
-    SerialUSB.println("GPIO DATA:");
-    for (int channel = 0; channel < frameSize; channel += 1) {
-        SerialUSB.print(response_frame[channel], HEX);
-        SerialUSB.print(" ");
-    }
 
     for(int currBoard = 0; currBoard < TOTALBOARDS-1; currBoard++) {
 
@@ -177,9 +202,6 @@ void calculateCellTemperatures(CellVoltage cellData[], CellTemperature cellTempD
     for (int i = 0; i < length; i++) {
         float cellVoltage = cellData[i].rawVoltage * 0.00015259;
         double temp = Interpolation::Linear(xValues, yValues, 33, cellVoltage, true);
-        if (temp < -10) {
-
-        }
         cellTempData[i].channel = cellData[i].channel;
         cellTempData[i].temperature = static_cast<float>(temp);
     }
@@ -254,6 +276,27 @@ void readFaultSummary() {
         }
     }   
 }
+
+void sendARStateFrame() {
+    int ARState = digitalRead(AIRPlus_STATE) << 2 | digitalRead(PRE_STATE) << 1 | digitalRead(AIRMinus_STATE);
+    CAN_FRAME myCANFrame;
+    myCANFrame.id = AR_STATE_FRAME_ID;
+    myCANFrame.length = 1;
+    myCANFrame.extended = false;
+    myCANFrame.data.byte[0] = ARState;  
+
+    int currentMillis = millis();
+    while (!Can1.available() && millis() - currentMillis <= 10);
+    Can1.sendFrame(myCANFrame);
+}
+
+void sendCellBalacingFrames(bool hasFinishedBalancing) {
+    CAN_FRAME myCANFrame;
+    myCANFrame.id = BASE_CB_FRAME_ID;
+    myCANFrame.length = 1;
+    myCANFrame.extended = false;
+    myCANFrame.data.byte[0] = hasFinishedBalancing ? 0x01 : 0x00;
+}
  
 void sendTemperatureFaultFrame(int device) {
     int baseReg = GPIO8_HI;
@@ -261,19 +304,17 @@ void sendTemperatureFaultFrame(int device) {
         CellVoltage GPIOdata = readCell(device, baseReg + i*2, i);
         CellTemperature cellTempData[1];
         calculateCellTemperatures(&GPIOdata, cellTempData, 1);
-        float GPIOtemp = cellTempData[0].temperature;
+        int16_t GPIOtemp = static_cast<int16_t>(cellTempData[0].temperature * TEMPERATURE_SCALING_FACTOR);
         if (GPIOtemp < -10) {
             CAN_FRAME myCANFrame;
             myCANFrame.id = TEMPERATURE_FAULT_ID;
-            myCANFrame.length = 7;
+            myCANFrame.length = 5;
             myCANFrame.extended = false;
             myCANFrame.data.byte[0] = device;
             myCANFrame.data.byte[1] = i+1;
             myCANFrame.data.byte[2] = UNDER_TEMPERATURE;
-            myCANFrame.data.byte[3] = static_cast<uint8_t>(GPIOtemp) & 0xFF;
-            myCANFrame.data.byte[4] = (static_cast<uint8_t>(GPIOtemp) >> 8) & 0xFF;
-            myCANFrame.data.byte[5] = (static_cast<uint8_t>(GPIOtemp) >> 16) & 0xFF;;
-            myCANFrame.data.byte[6] = (static_cast<uint8_t>(GPIOtemp) >> 24) & 0xFF;
+            myCANFrame.data.byte[3] = GPIOtemp & 0xFF;
+            myCANFrame.data.byte[4] = (GPIOtemp >> 8) & 0xFF;
 
             int currentMillis = millis();
             while (!Can1.available() && millis() - currentMillis <= 10);
@@ -286,10 +327,8 @@ void sendTemperatureFaultFrame(int device) {
             myCANFrame.data.byte[0] = device;
             myCANFrame.data.byte[1] = i+1;
             myCANFrame.data.byte[2] = OVER_TEMPERATURE;
-            myCANFrame.data.byte[3] = static_cast<uint8_t>(GPIOtemp) & 0xFF;
-            myCANFrame.data.byte[4] = (static_cast<uint8_t>(GPIOtemp) >> 8) & 0xFF;
-            myCANFrame.data.byte[5] = (static_cast<uint8_t>(GPIOtemp) >> 16) & 0xFF;;
-            myCANFrame.data.byte[6] = (static_cast<uint8_t>(GPIOtemp) >> 24) & 0xFF;
+            myCANFrame.data.byte[3] = GPIOtemp & 0xFF;
+            myCANFrame.data.byte[4] = (GPIOtemp >> 8) & 0xFF;
 
             int currentMillis = millis();
             while (!Can1.available() && millis() - currentMillis <= 10);
@@ -307,7 +346,6 @@ void sendVoltageFaultFrame(int device, int reg, uint16_t fault_response_frame[],
         for (size_t i = 0; i < ACTIVECHANNELS; i++) {
             if (v & (1 << i)) {
                 CellVoltage cellData = readCell(device, baseReg - i*2, i);
-
                 CAN_FRAME myCANFrame;
                 myCANFrame.id = VOLTAGE_FAULT_ID;
                 myCANFrame.length = 5;
@@ -317,6 +355,10 @@ void sendVoltageFaultFrame(int device, int reg, uint16_t fault_response_frame[],
                 myCANFrame.data.byte[2] = faultType;
                 myCANFrame.data.byte[3] = cellData.rawVoltage & 0xFF;
                 myCANFrame.data.byte[4] = (cellData.rawVoltage >> 8) & 0xFF;
+
+                SerialUSB.print("Voltage fault: ");
+                SerialUSB.println(cellData.rawVoltage & 0xFF);
+                SerialUSB.println((cellData.rawVoltage >> 8) & 0xFF);
 
                 int currentMillis = millis();
                 while (!Can1.available() && millis() - currentMillis <= 10);
@@ -358,16 +400,18 @@ void sendFaultFrames() {
                 switch (fault) {
                     case FAULT_OTUT_:
                         sendTemperatureFaultFrame(board);
+                        shutdown();
                         break;
                     case FAULT_OVUV_:
                         sendVoltageFaultFrame(board, FAULT_OV1, fault_response_frame, OVER_VOLTAGE);
                         sendVoltageFaultFrame(board, FAULT_UV1, fault_response_frame, UNDER_VOLTAGE);
+                        shutdown();
                         break;   
                     default:
                         sendFaultFrame(board, fault, fault_response_frame);
                         break;
                     }
-                shutdown();
+                
             }
         }
     } 

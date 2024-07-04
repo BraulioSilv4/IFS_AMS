@@ -153,6 +153,20 @@ void SpiAutoAddress()
     return;
 }
 
+void shutdown() {
+    digitalWrite(SHUTDOWN1, LOW);
+    digitalWrite(SHUTDOWN2, LOW);
+}
+
+void sendCommFaultFrame() {
+    //send a frame to the CAN bus
+    CAN_FRAME commFaultFrame;
+    commFaultFrame.id = COMM_FAULT_ID;
+    commFaultFrame.length = 1;
+    commFaultFrame.data.byte[0] = 0x01;
+    Can1.sendFrame(commFaultFrame);
+}
+
 //************************
 //WRITE AND READ FUNCTIONS
 //************************
@@ -163,7 +177,16 @@ int SpiWriteReg(char bID, uint16_t wAddr, uint64_t dwData, char bLen, char bWrit
     // device address, register start address, data bytes, data length, write type (single, broadcast, stack)
     bRes = 0;
     memset(spiBuf,0,sizeof(spiBuf));
-    while(!isSPIReady()) delayMicroseconds(5); //wait until SPI_RDY is ready
+    unsigned long start = millis();
+    while(!isSPIReady()) {
+        delayMicroseconds(5); //wait until SPI_RDY is ready
+        if (millis() - start > COMM_TIMEOUT) {
+            SerialUSB.println("Communication fault detected.#################################################");
+            sendCommFaultFrame();
+            shutdown();
+            return -1;
+        }
+    }
     switch (bLen) {
     case 1:
         spiBuf[0] = dwData & 0x00000000000000FF;
@@ -262,22 +285,22 @@ int SpiWriteFrame(uint16_t bID, uint16_t wAddr, uint16_t * pData, uint16_t bLen,
 //GENERATE READ COMMAND FRAME AND THEN WAIT FOR RESPONSE DATA (INTERRUPT MODE FOR SCIRX)
 int SpiReadReg(char bID, uint16_t wAddr, uint16_t * pData, char bLen, uint32_t dwTimeOut, char bWriteType) {
     // device address, register start address, byte frame pointer to store data, data length, read type (single, broadcast, stack)
-    unsigned long start = millis();
+    
     bRes = 0; //total bytes received    
     
-    //Serial.println(isSPIReady());
+    unsigned long start = millis();
     while(!isSPIReady()) {
         SerialUSB.println("Waiting for SPI_RDY1");
         SerialUSB.println(millis() - start);
         delayMicroseconds(1); //wait until SPI_RDY is ready
         if (millis() - start > COMM_TIMEOUT) {
             SerialUSB.println("Communication fault detected.#################################################");
-            comm_fault = true;
+            sendCommFaultFrame();
+            shutdown();
             return -1;
-        } else {
-            comm_fault = false;
-        }
+        } 
     }
+
         //Serial.println("SPI_RDY is ready"
     //send the read request to the 600
     spiReturn = bLen - 1;
@@ -320,12 +343,10 @@ int SpiReadReg(char bID, uint16_t wAddr, uint16_t * pData, char bLen, uint32_t d
             delayMicroseconds(100);
             if (millis() - start > COMM_TIMEOUT) {
                 SerialUSB.println("Communication fault detected2. #################################################");
-                comm_fault = true;
+                sendCommFaultFrame();
+                shutdown();
                 return -1;  
-            } else {
-                SerialUSB.println("Communication fault detected3. #################################################");
-                comm_fault = false;
-            }
+            } 
         }  
        
         //wait until SPI_RDY is ready
