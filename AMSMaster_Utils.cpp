@@ -356,10 +356,6 @@ void sendVoltageFaultFrame(int device, int reg, uint16_t fault_response_frame[],
                 myCANFrame.data.byte[3] = cellData.rawVoltage & 0xFF;
                 myCANFrame.data.byte[4] = (cellData.rawVoltage >> 8) & 0xFF;
 
-                SerialUSB.print("Voltage fault: ");
-                SerialUSB.println(cellData.rawVoltage & 0xFF);
-                SerialUSB.println((cellData.rawVoltage >> 8) & 0xFF);
-
                 int currentMillis = millis();
                 while (!Can1.available() && millis() - currentMillis <= 10);
                 Can1.sendFrame(myCANFrame);    

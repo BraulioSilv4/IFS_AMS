@@ -159,11 +159,16 @@ void shutdown() {
 }
 
 void sendCommFaultFrame() {
+    SerialUSB.println("Sending comm fault frame|!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
     //send a frame to the CAN bus
     CAN_FRAME commFaultFrame;
     commFaultFrame.id = COMM_FAULT_ID;
     commFaultFrame.length = 1;
+    commFaultFrame.extended = false;
     commFaultFrame.data.byte[0] = 0x01;
+
+    int currentMillis = millis();
+    while (!Can1.available() && millis() - currentMillis <= 10);
     Can1.sendFrame(commFaultFrame);
 }
 
@@ -290,8 +295,6 @@ int SpiReadReg(char bID, uint16_t wAddr, uint16_t * pData, char bLen, uint32_t d
     
     unsigned long start = millis();
     while(!isSPIReady()) {
-        SerialUSB.println("Waiting for SPI_RDY1");
-        SerialUSB.println(millis() - start);
         delayMicroseconds(1); //wait until SPI_RDY is ready
         if (millis() - start > COMM_TIMEOUT) {
             SerialUSB.println("Communication fault detected.#################################################");
@@ -338,8 +341,6 @@ int SpiReadReg(char bID, uint16_t wAddr, uint16_t * pData, char bLen, uint32_t d
     while(i>(-1))
     {
         while(!isSPIReady()) {
-            SerialUSB.println("Waiting for SPI_RDY2");
-            SerialUSB.println(millis() - start);
             delayMicroseconds(100);
             if (millis() - start > COMM_TIMEOUT) {
                 SerialUSB.println("Communication fault detected2. #################################################");

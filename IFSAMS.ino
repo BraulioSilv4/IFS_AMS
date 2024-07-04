@@ -55,37 +55,12 @@ void loop() {
 
         CellVoltage cellData[(TOTALBOARDS-1)*ACTIVECHANNELS];
         readCells(ACTIVECHANNELS, VCELL16_HI, RESPONSE_FRAME_SIZE, cellData);
-        SerialUSB.println("Reading cell data:");
-        for (int i = 0; i < length(cellData); i++) {
-            SerialUSB.print("Board: ");
-            SerialUSB.print(cellData[i].board);
-            SerialUSB.print(" Channel: ");
-            SerialUSB.print(cellData[i].channel);
-            SerialUSB.print(" Voltage: ");
-            SerialUSB.println(cellData[i].rawVoltage * 0.00019073);
-        }
 
         CellVoltage GPIOdata[(TOTALBOARDS-1)*GPIOCHANNELS];
         readCells(GPIOCHANNELS, GPIO1_HI, 22, GPIOdata);
-        // SerialUSB.println("Reading GPIO data:");
-        // for (int i = 0; i < length(GPIOdata); i++) {
-        //     SerialUSB.print("Board: ");
-        //     SerialUSB.print(GPIOdata[i].board);
-        //     SerialUSB.print(" Channel: ");
-        //     SerialUSB.print(GPIOdata[i].channel);
-        //     SerialUSB.print(" Voltage: ");
-        //     SerialUSB.println(GPIOdata[i].rawVoltage * 0.00015259);
-        // }
 
         CellTemperature cellTempData[(TOTALBOARDS-1)*GPIOCHANNELS];
         calculateCellTemperatures(GPIOdata, cellTempData, length(GPIOdata));
-        // SerialUSB.println("Reading cell temperature data:");
-        // for (int i = 0; i < length(cellTempData); i++) {
-        //     SerialUSB.print("Channel: ");
-        //     SerialUSB.print(cellTempData[i].channel);
-        //     SerialUSB.print(" Temperature: ");
-        //     SerialUSB.println(cellTempData[i].temperature);
-        // }
     
         sendVoltageFrames(cellData);
         sendTemperatureFrames(cellTempData);

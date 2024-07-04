@@ -37,7 +37,7 @@
 // User defines
 #define TOTALBOARDS 4     //boards in stack
 #define COMM_TIMEOUT 900
-#define COMM_FAULT_ID 0x67
+#define COMM_FAULT_ID 0x154
 #define CELL_TEMP_NUM 8
 #define ACTIVECHANNELS 16   //channels to activate (incomplete, does not work right now)~
 #define GPIOCHANNELS 8      //channels to read from GPIO

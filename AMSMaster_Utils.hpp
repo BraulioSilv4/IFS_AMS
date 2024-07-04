@@ -25,7 +25,6 @@
 #define VOLTAGE_FAULT_ID        0x12D
 #define TEMPERATURE_FAULT_ID    0x12E
 #define FAULT_ID                0x12F
-#define COMM_FAULT_ID           0x154
 #define AR_STATE_FRAME_ID       0x155
 #define BASE_VOLTAGE_FRAME_ID        0x130
 #define BASE_TEMPERATURE_FRAME_ID    0x148
