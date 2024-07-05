@@ -81,7 +81,7 @@ struct BOARD_FAULT_SUMMARY {
 }; 
 
 void wakeSequence();
-
+void restartChips();
 void sendCommFaultFrame();
 void sendCellBalacingFrames(bool hasFinishedBalancing);
 void initializeInternalStructures();

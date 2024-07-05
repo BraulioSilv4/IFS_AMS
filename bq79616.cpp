@@ -184,14 +184,16 @@ int SpiWriteReg(char bID, uint16_t wAddr, uint64_t dwData, char bLen, char bWrit
     memset(spiBuf,0,sizeof(spiBuf));
     unsigned long start = millis();
     while(!isSPIReady()) {
+        SerialUSB.println("SPI_RDY is not ready");
         delayMicroseconds(5); //wait until SPI_RDY is ready
-        if (millis() - start > COMM_TIMEOUT) {
+        if ((millis() - start > COMM_TIMEOUT) || comm_fault) {
             SerialUSB.println("Communication fault detected.#################################################");
             sendCommFaultFrame();
-            shutdown();
+            comm_fault = true;
             return -1;
         }
     }
+    comm_fault = false;
     switch (bLen) {
     case 1:
         spiBuf[0] = dwData & 0x00000000000000FF;
@@ -295,14 +297,16 @@ int SpiReadReg(char bID, uint16_t wAddr, uint16_t * pData, char bLen, uint32_t d
     
     unsigned long start = millis();
     while(!isSPIReady()) {
+        SerialUSB.println("SPI_RDY is not ready");
         delayMicroseconds(1); //wait until SPI_RDY is ready
-        if (millis() - start > COMM_TIMEOUT) {
+        if ((millis() - start > COMM_TIMEOUT) || comm_fault) {
             SerialUSB.println("Communication fault detected.#################################################");
             sendCommFaultFrame();
-            shutdown();
+            comm_fault = true;
             return -1;
         } 
     }
+    comm_fault = false;
 
         //Serial.println("SPI_RDY is ready"
     //send the read request to the 600
@@ -341,14 +345,16 @@ int SpiReadReg(char bID, uint16_t wAddr, uint16_t * pData, char bLen, uint32_t d
     while(i>(-1))
     {
         while(!isSPIReady()) {
+            SerialUSB.println("SPI_RDY is not ready");
             delayMicroseconds(100);
-            if (millis() - start > COMM_TIMEOUT) {
+            if ((millis() - start > COMM_TIMEOUT) || comm_fault) {
                 SerialUSB.println("Communication fault detected2. #################################################");
                 sendCommFaultFrame();
-                shutdown();
+                comm_fault = true;
                 return -1;  
             } 
         }  
+        comm_fault = false;
        
         //wait until SPI_RDY is ready
         //if there is more than 128 bytes remaining

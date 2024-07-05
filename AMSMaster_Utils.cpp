@@ -105,6 +105,38 @@ void wakeSequence() {
     ResetAllFaults(DEVICE, FRMWRT_ALL_W);
 }
 
+void restartChips() {
+    SPI.end();
+    SpiWake79600(); //send wake ping to bridge device
+    delayMicroseconds(3500); //wait tSU(WAKE_SHUT), at least 3.5ms
+    SpiWake79600(); //send wake ping to bridge device
+    delayMicroseconds(3500); //tSU(WAKE_SHUT), at least 3.5ms
+    SPI.begin();
+
+    comm_fault = false;
+    uint16_t zeros[8];
+    SerialUSB.println("Restarting chips");
+    ResetAllFaults(0, FRMWRT_ALL_W);
+    memset(zeros, 0, sizeof(zeros));
+    int result = SpiReadReg(0, FAULT_SUMMARY, zeros, 1, 0, FRMWRT_ALL_R); // try to read a register to trigger looping this method
+    if(result == -1) {
+        SerialUSB.println("Communication fault");
+        shutdown();
+        return;
+    }
+    
+
+    delay(20);
+
+    sendWakeTone();
+
+    SpiAutoAddress();
+    
+    ResetAllFaults(DEVICE, FRMWRT_ALL_W);
+    setRegisters();
+    ResetAllFaults(DEVICE, FRMWRT_ALL_W);
+}
+
 void balanceCells(double thresh) {
     if (thresh < 2.45 || thresh > 4) {
         return;
@@ -247,7 +279,7 @@ void readFaultSummary() {
                     boardsFaultsData[currBoard].faults[FAULT_OTUT_].hasTimeoutStarted = true;
                 } 
             
-                if (millis() - boardsFaultsData[currBoard].faults[FAULT_OTUT_].timeout > FAULT_TIMEOUT){
+                if (millis() - boardsFaultsData[currBoard].faults[FAULT_OTUT_].timeout > TEMP_FAULT_TIMEOUT){
                     boardsFaultsData[currBoard].faults[FAULT_OTUT_].hasTimeoutEnded = true;
                 } 
                 break;
@@ -278,12 +310,13 @@ void readFaultSummary() {
 }
 
 void sendARStateFrame() {
-    int ARState = digitalRead(AIRPlus_STATE) << 2 | digitalRead(PRE_STATE) << 1 | digitalRead(AIRMinus_STATE);
+    int ARState = digitalRead(AIRMinus_STATE) << 2 | digitalRead(PRE_STATE) << 1 | digitalRead(AIRPlus_STATE);
+
     CAN_FRAME myCANFrame;
     myCANFrame.id = AR_STATE_FRAME_ID;
     myCANFrame.length = 1;
     myCANFrame.extended = false;
-    myCANFrame.data.byte[0] = ARState;  
+    myCANFrame.data.byte[0] = ~ARState;  
 
     int currentMillis = millis();
     while (!Can1.available() && millis() - currentMillis <= 10);
